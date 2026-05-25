@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "Karakeep Quick Archive",
+  "version": "1.0.0",
+  "description": "Archive the current tab to Karakeep and close it immediately, with compact processing, manual review, and history views.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "karakeep-quick-archive@zeromusta.com",
+      "strict_min_version": "128.0",
+      "update_url": "https://zeromusta.github.io/karakeep-quick-archive-firefox/updates.json"
+    }
+  },
+  "permissions": ["tabs", "storage", "alarms"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "icons": {
+    "48": "icons/icon-light-48.png",
+    "96": "icons/icon-light-96.png",
+    "128": "icons/icon-light-128.png"
+  },
+  "background": {
+    "scripts": ["background/controller.js"],
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Karakeep Quick Archive",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-light-16.png",
+      "32": "icons/icon-light-32.png"
+    },
+    "theme_icons": [
+      {
+        "light": "icons/icon-light-16.png",
+        "dark": "icons/icon-dark-16.png",
+        "size": 16
+      },
+      {
+        "light": "icons/icon-light-32.png",
+        "dark": "icons/icon-dark-32.png",
+        "size": 32
+      }
+    ]
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "commands": {
+    "archive-current-tab": {
+      "suggested_key": {
+        "default": "Ctrl+Alt+W",
+        "mac": "Command+Alt+W"
+      },
+      "description": "Archive the current tab to Karakeep and close it"
+    }
+  }
+}

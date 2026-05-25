@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Karakeep Quick Archive</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <header class="topbar">
+        <div>
+          <h1>Karakeep Quick Archive</h1>
+          <p class="subtitle">Recent archives and closed tabs</p>
+        </div>
+        <div class="topbar-actions">
+          <button
+            id="open-options-button"
+            class="icon-button"
+            type="button"
+            aria-label="Settings"
+            data-tooltip="Settings"
+          ></button>
+          <button
+            id="monitoring-toggle"
+            class="monitoring-toggle"
+            type="button"
+            aria-pressed="false"
+          ></button>
+        </div>
+      </header>
+
+      <p id="popup-status" class="status-message" role="status" hidden></p>
+
+      <section class="section">
+        <div class="section-header">
+          <h2>Processing</h2>
+          <span id="processing-count" class="count-badge">0</span>
+        </div>
+        <div id="processing-list" class="item-list"></div>
+      </section>
+
+      <section class="section">
+        <div class="section-header">
+          <h2>Manual Review</h2>
+          <span id="manual-review-count" class="count-badge">0</span>
+        </div>
+        <div id="manual-review-list" class="item-list"></div>
+      </section>
+
+      <section class="section">
+        <div class="section-header">
+          <h2>History</h2>
+          <span id="history-count" class="count-badge">0</span>
+        </div>
+        <div class="history-filters" role="tablist">
+          <button type="button" class="filter-pill" data-history-filter="all">All</button>
+          <button type="button" class="filter-pill" data-history-filter="closed">Closed</button>
+          <button type="button" class="filter-pill" data-history-filter="archived">Archived</button>
+          <button type="button" class="filter-pill" data-history-filter="skipped">Skipped</button>
+        </div>
+        <div id="history-list" class="item-list"></div>
+      </section>
+    </main>
+
+    <script type="module" src="./popup.js"></script>
+  </body>
+</html>

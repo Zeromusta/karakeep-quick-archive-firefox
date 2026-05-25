@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Karakeep Quick Archive Settings</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <main class="options-page">
+      <header class="page-header">
+        <h1>Karakeep Quick Archive Settings</h1>
+      </header>
+
+      <form id="options-form" class="options-form">
+        <section class="settings-section">
+          <h2>Connection</h2>
+
+          <label class="field">
+            <span>Karakeep Base URL</span>
+            <input id="base-url-input" name="karakeepBaseUrl" type="url" placeholder="https://karakeep.example.com" required />
+          </label>
+
+          <label class="field">
+            <span>Karakeep API Key</span>
+            <input id="api-key-input" name="karakeepApiKey" type="password" autocomplete="off" required />
+          </label>
+
+          <label class="field">
+            <span>Request timeout (seconds)</span>
+            <input id="timeout-input" name="requestTimeoutSeconds" type="number" min="1" max="120" step="1" />
+          </label>
+
+          <div class="action-row">
+            <button id="test-connection-button" type="button">Test connection</button>
+            <output id="test-connection-status" class="inline-status" hidden></output>
+          </div>
+
+          <div class="action-row">
+            <button id="save-button" type="submit">Save settings</button>
+            <output id="save-status" class="inline-status" hidden></output>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h2>History</h2>
+
+          <label class="field">
+            <span>History retention (hours)</span>
+            <input id="retention-input" name="historyRetentionHours" type="number" min="1" max="8760" step="1" />
+          </label>
+
+          <label class="field">
+            <span>Max history items to render</span>
+            <input id="max-history-input" name="maxHistoryItems" type="number" min="1" max="5000" step="1" />
+          </label>
+
+          <div class="action-row">
+            <button id="clear-history-button" type="button" class="danger-button">Clear all history</button>
+            <output id="clear-history-status" class="inline-status" hidden></output>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h2>UI</h2>
+
+          <label class="checkbox-field">
+            <input id="show-favicons-input" name="showFavicons" type="checkbox" />
+            <span>Show favicon in UI</span>
+          </label>
+
+          <label class="field">
+            <span>Extension Theme</span>
+            <select id="theme-input" name="theme">
+              <option value="system">Follow system theme</option>
+              <option value="light">Light mode</option>
+              <option value="dark">Dark mode</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Extension icon</span>
+            <select id="icon-theme-input" name="iconTheme">
+              <option value="system">Follow Firefox theme</option>
+              <option value="light">Light mode (black icon)</option>
+              <option value="dark">Dark mode (white icon)</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="settings-section">
+          <h2>Debug</h2>
+
+          <label class="checkbox-field">
+            <input id="debug-logging-input" name="debugLogging" type="checkbox" />
+            <span>Debug logging</span>
+          </label>
+        </section>
+      </form>
+    </main>
+
+    <script type="module" src="./options.js"></script>
+  </body>
+</html>

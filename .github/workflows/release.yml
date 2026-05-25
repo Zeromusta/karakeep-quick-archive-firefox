@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests
+        run: npm test
+
+      - name: Sync manifest version with tag
+        run: |
+          node -e "
+            const fs = require('node:fs');
+            const m = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+            m.version = '${{ steps.version.outputs.version }}';
+            fs.writeFileSync('manifest.json', JSON.stringify(m, null, 2) + '\n');
+          "
+
+      - name: Install web-ext
+        run: npm install -g web-ext
+
+      - name: Sign extension via AMO
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          web-ext sign \
+            --channel=unlisted \
+            --api-key "$AMO_JWT_ISSUER" \
+            --api-secret "$AMO_JWT_SECRET"
+
+      - name: Rename signed artifact
+        id: artifact
+        run: |
+          SRC=$(ls web-ext-artifacts/*.xpi | head -n1)
+          DEST="karakeep-quick-archive-firefox-${{ steps.version.outputs.version }}.xpi"
+          mv "$SRC" "$DEST"
+          echo "path=$DEST" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" \
+            --title "v${{ steps.version.outputs.version }}" \
+            --generate-notes \
+            "${{ steps.artifact.outputs.path }}"
+
+      - name: Build updates.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p gh-pages-out
+          node .github/scripts/build-updates-json.mjs > gh-pages-out/updates.json
+          cat gh-pages-out/updates.json
+
+      - name: Publish updates.json to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./gh-pages-out
+          publish_branch: gh-pages
+          keep_files: true
+          commit_message: "Update auto-update feed for v${{ steps.version.outputs.version }}"
