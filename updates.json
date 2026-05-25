@@ -1,0 +1,12 @@
+{
+  "addons": {
+    "karakeep-quick-archive@zeromusta.com": {
+      "updates": [
+        {
+          "version": "1.0.0",
+          "update_link": "https://github.com/Zeromusta/karakeep-quick-archive-firefox/releases/download/v1.0.0/karakeep-quick-archive-firefox-1.0.0.xpi"
+        }
+      ]
+    }
+  }
+}
