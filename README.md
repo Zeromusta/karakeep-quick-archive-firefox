@@ -34,18 +34,7 @@ closes the tab. Designed to make "archive this tab" feel as cheap as
 
 ### Temporary load (development / one-off)
 
-1. Open `about:debugging` in Firefox.
-2. Click **This Firefox** → **Load Temporary Add-on…**.
-3. Select `manifest.json` in this directory.
-
-The extension stays loaded until Firefox restarts.
-
-### Permanent install
-
-Firefox requires signed extensions for permanent installation. The
-distribution paths (Mozilla self-distribution signing with GitHub
-Actions automation, AMO listing, etc.) are documented in
-[RELEASING.md](RELEASING.md).
+https://github.com/Zeromusta/karakeep-quick-archive-firefox/releases
 
 ## Configure
 
