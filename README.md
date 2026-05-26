@@ -32,8 +32,6 @@ closes the tab. Designed to make "archive this tab" feel as cheap as
 
 ## Install
 
-### Temporary load (development / one-off)
-
 https://github.com/Zeromusta/karakeep-quick-archive-firefox/releases
 
 ## Configure
