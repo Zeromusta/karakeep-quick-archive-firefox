@@ -1,28 +1,27 @@
-import { ICON_PATHS, ICON_THEMES } from "./constants.js";
+import {
+  ARCHIVE_FLASH_DURATION_MS,
+  ICON_PATHS,
+  ICON_THEMES
+} from "./constants.js";
 
 let currentMode = ICON_THEMES.system;
 let currentPaused = false;
 let themeListenerAttached = false;
+let flashTimer = null;
 
 export async function applyIconTheme(iconTheme, monitoringPaused = false) {
   if (typeof browser === "undefined" || !browser.action?.setIcon) {
     return;
   }
+  // A theme or pause change supersedes any in-flight archived-tick flash.
+  clearFlashTimer();
   currentMode = iconTheme;
   currentPaused = Boolean(monitoringPaused);
 
-  let pathMap;
-  if (iconTheme === ICON_THEMES.light) {
-    pathMap = ICON_PATHS.light;
-  } else if (iconTheme === ICON_THEMES.dark) {
-    pathMap = ICON_PATHS.dark;
-  } else {
-    const useDark = await currentToolbarIsDark();
-    pathMap = useDark ? ICON_PATHS.dark : ICON_PATHS.light;
-  }
+  const pathMap = await resolvePathMap(iconTheme);
 
   if (currentPaused) {
-    const imageData = await buildPausedImageData(pathMap);
+    const imageData = await buildBadgedImageData(pathMap, drawPauseBadge);
     if (imageData) {
       await setActionImageData(imageData);
       await setActionTitle("Karakeep Quick Archive — Monitoring paused");
@@ -33,6 +32,45 @@ export async function applyIconTheme(iconTheme, monitoringPaused = false) {
 
   await setActionIcon(pathMap);
   await setActionTitle("Karakeep Quick Archive");
+}
+
+// Briefly composite a green tick onto the toolbar icon to confirm an archive
+// was captured, then revert to the current base/paused icon after a delay.
+export async function flashArchivedIcon() {
+  if (typeof browser === "undefined" || !browser.action?.setIcon) {
+    return;
+  }
+  const pathMap = await resolvePathMap(currentMode);
+  const imageData = await buildBadgedImageData(pathMap, drawCheckBadge);
+  if (!imageData) {
+    // OffscreenCanvas unavailable — skip the cosmetic flash.
+    return;
+  }
+  clearFlashTimer();
+  await setActionImageData(imageData);
+  await setActionTitle("Karakeep Quick Archive — Archived");
+  flashTimer = setTimeout(() => {
+    flashTimer = null;
+    void applyIconTheme(currentMode, currentPaused);
+  }, ARCHIVE_FLASH_DURATION_MS);
+}
+
+function clearFlashTimer() {
+  if (flashTimer !== null) {
+    clearTimeout(flashTimer);
+    flashTimer = null;
+  }
+}
+
+async function resolvePathMap(iconTheme) {
+  if (iconTheme === ICON_THEMES.light) {
+    return ICON_PATHS.light;
+  }
+  if (iconTheme === ICON_THEMES.dark) {
+    return ICON_PATHS.dark;
+  }
+  const useDark = await currentToolbarIsDark();
+  return useDark ? ICON_PATHS.dark : ICON_PATHS.light;
 }
 
 export function watchSystemThemeChanges() {
@@ -75,7 +113,7 @@ async function setActionTitle(title) {
   }
 }
 
-async function buildPausedImageData(pathMap) {
+async function buildBadgedImageData(pathMap, drawBadge) {
   if (
     typeof OffscreenCanvas !== "function" ||
     typeof createImageBitmap !== "function" ||
@@ -86,7 +124,11 @@ async function buildPausedImageData(pathMap) {
   }
   const entries = await Promise.all(
     Object.entries(pathMap).map(async ([size, iconPath]) => {
-      const composed = await composePausedImageData(iconPath, Number(size));
+      const composed = await composeBadgedImageData(
+        iconPath,
+        Number(size),
+        drawBadge
+      );
       return composed ? [size, composed] : null;
     })
   );
@@ -99,7 +141,7 @@ async function buildPausedImageData(pathMap) {
   return Object.keys(result).length > 0 ? result : null;
 }
 
-async function composePausedImageData(iconPath, size) {
+async function composeBadgedImageData(iconPath, size, drawBadge) {
   try {
     const url = browser.runtime.getURL(iconPath);
     const response = await fetch(url);
@@ -114,7 +156,7 @@ async function composePausedImageData(iconPath, size) {
       return null;
     }
     ctx.drawImage(bitmap, 0, 0, size, size);
-    drawPauseBadge(ctx, size);
+    drawBadge(ctx, size);
     return ctx.getImageData(0, 0, size, size);
   } catch {
     return null;
@@ -150,6 +192,37 @@ function drawPauseBadge(ctx, size) {
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(cx - barGap - barWidth, barsTop, barWidth, barHeight);
   ctx.fillRect(cx + barGap, barsTop, barWidth, barHeight);
+}
+
+function drawCheckBadge(ctx, size) {
+  // Same bottom-right placement and ring treatment as drawPauseBadge, but a
+  // green disc with a white check mark — the "archive captured" confirmation.
+  const badgeRadius = size * 0.42;
+  const ringWidth = Math.max(1, size * 0.08);
+  const cornerInset = badgeRadius * 0.7;
+  const cx = size - cornerInset;
+  const cy = size - cornerInset;
+
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(cx, cy, badgeRadius, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#16a34a";
+  ctx.beginPath();
+  ctx.arc(cx, cy, badgeRadius - ringWidth, 0, Math.PI * 2);
+  ctx.fill();
+
+  const innerRadius = badgeRadius - ringWidth;
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = Math.max(1, innerRadius * 0.3);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(cx - innerRadius * 0.5, cy + innerRadius * 0.02);
+  ctx.lineTo(cx - innerRadius * 0.12, cy + innerRadius * 0.42);
+  ctx.lineTo(cx + innerRadius * 0.55, cy - innerRadius * 0.4);
+  ctx.stroke();
 }
 
 async function currentToolbarIsDark() {

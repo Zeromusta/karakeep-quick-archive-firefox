@@ -104,7 +104,11 @@ export function normalizeSettingsInput(rawSettings = {}, options = {}) {
     iconTheme: normalizeIconTheme(mergedSettings.iconTheme),
     theme: normalizeTheme(mergedSettings.theme),
     debugLogging: Boolean(mergedSettings.debugLogging),
-    monitoringPaused: Boolean(mergedSettings.monitoringPaused)
+    monitoringPaused: Boolean(mergedSettings.monitoringPaused),
+    archiveFeedbackIcon: Boolean(mergedSettings.archiveFeedbackIcon),
+    archiveFeedbackNotification: Boolean(
+      mergedSettings.archiveFeedbackNotification
+    )
   };
 }
 

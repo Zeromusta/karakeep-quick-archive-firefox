@@ -423,6 +423,17 @@ button:hover {
   border-color: light-dark(#f87171, #dc2626);
 }
 
+.monitoring-toggle.is-unconfigured {
+  border-color: light-dark(#fde68a, #854d0e);
+  background: light-dark(#fef9c3, #422006);
+  color: light-dark(#a16207, #fde68a);
+}
+
+.monitoring-toggle.is-unconfigured:hover {
+  background: light-dark(#fef08a, #854d0e);
+  border-color: light-dark(#facc15, #a16207);
+}
+
 .monitoring-toggle:disabled {
   cursor: progress;
   opacity: 0.7;

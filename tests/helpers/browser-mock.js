@@ -25,6 +25,7 @@ export function createBrowserMock(options = {}) {
       sessionState,
       removedTabIds: [],
       createdTabs: [],
+      notifications: [],
       permissionsContainsCalls: [],
       permissionsRequestCalls: [],
       async emitStorageChange(changes) {
@@ -67,6 +68,9 @@ export function createBrowserMock(options = {}) {
       onInstalled: createEvent(),
       onStartup: createEvent(),
       onMessage: createEvent(),
+      getURL(path) {
+        return `moz-extension://test/${path}`;
+      },
       async openOptionsPage() {
         browser.__mock.openOptionsPageCalls =
           (browser.__mock.openOptionsPageCalls ?? 0) + 1;
@@ -87,6 +91,12 @@ export function createBrowserMock(options = {}) {
     },
     commands: {
       onCommand: createEvent()
+    },
+    notifications: {
+      async create(options) {
+        browser.__mock.notifications.push(cloneValue(options));
+        return `notif-${browser.__mock.notifications.length}`;
+      }
     },
     tabs: {
       onCreated: createEvent(),

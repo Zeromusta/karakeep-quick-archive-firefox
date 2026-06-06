@@ -15,6 +15,12 @@ const showFaviconsInput = document.querySelector("#show-favicons-input");
 const iconThemeInput = document.querySelector("#icon-theme-input");
 const themeInput = document.querySelector("#theme-input");
 const debugLoggingInput = document.querySelector("#debug-logging-input");
+const archiveFeedbackIconInput = document.querySelector(
+  "#archive-feedback-icon-input"
+);
+const archiveFeedbackNotificationInput = document.querySelector(
+  "#archive-feedback-notification-input"
+);
 const testConnectionButton = document.querySelector("#test-connection-button");
 const clearHistoryButton = document.querySelector("#clear-history-button");
 const testConnectionStatus = document.querySelector("#test-connection-status");
@@ -59,6 +65,20 @@ showFaviconsInput.addEventListener("change", async () => {
 
 debugLoggingInput.addEventListener("change", async () => {
   await persistSettingChange("debugLogging", debugLoggingInput.checked);
+});
+
+archiveFeedbackIconInput.addEventListener("change", async () => {
+  await persistSettingChange(
+    "archiveFeedbackIcon",
+    archiveFeedbackIconInput.checked
+  );
+});
+
+archiveFeedbackNotificationInput.addEventListener("change", async () => {
+  await persistSettingChange(
+    "archiveFeedbackNotification",
+    archiveFeedbackNotificationInput.checked
+  );
 });
 
 optionsForm.addEventListener("submit", async (event) => {
@@ -160,6 +180,9 @@ async function loadSettings() {
   iconThemeInput.value = settings.iconTheme;
   themeInput.value = settings.theme;
   debugLoggingInput.checked = settings.debugLogging;
+  archiveFeedbackIconInput.checked = settings.archiveFeedbackIcon;
+  archiveFeedbackNotificationInput.checked =
+    settings.archiveFeedbackNotification;
   applyDocumentTheme(settings.theme);
 }
 
@@ -173,7 +196,9 @@ function readFormValues() {
     showFavicons: showFaviconsInput.checked,
     iconTheme: iconThemeInput.value,
     theme: themeInput.value,
-    debugLogging: debugLoggingInput.checked
+    debugLogging: debugLoggingInput.checked,
+    archiveFeedbackIcon: archiveFeedbackIconInput.checked,
+    archiveFeedbackNotification: archiveFeedbackNotificationInput.checked
   };
 }
 

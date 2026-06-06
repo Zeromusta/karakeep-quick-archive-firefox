@@ -53,7 +53,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
   iconTheme: ICON_THEMES.system,
   theme: THEMES.system,
   debugLogging: false,
-  monitoringPaused: false
+  monitoringPaused: false,
+  archiveFeedbackIcon: true,
+  archiveFeedbackNotification: false
 });
 
 export const DEFAULT_STORAGE_STATE = Object.freeze({
@@ -72,6 +74,9 @@ export const CLEANUP_PERIOD_MINUTES = 360;
 export const POPUP_STATUS_DURATION_MS = 3000;
 export const POPUP_RENDER_DEBOUNCE_MS = 100;
 export const TOOLTIP_DELAY_MS = 200;
+
+// How long the green "archived" tick lingers on the toolbar icon.
+export const ARCHIVE_FLASH_DURATION_MS = 2000;
 
 // Karakeep web UI path to view a single bookmark by ID. Substitute {id}.
 export const KARAKEEP_BOOKMARK_PREVIEW_PATH = "/dashboard/preview/{id}";

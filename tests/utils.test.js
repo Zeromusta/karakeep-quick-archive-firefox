@@ -48,9 +48,24 @@ test("normalizeSettingsInput validates required fields and integer options", () 
       iconTheme: "dark",
       theme: "dark",
       debugLogging: true,
-      monitoringPaused: false
+      monitoringPaused: false,
+      archiveFeedbackIcon: true,
+      archiveFeedbackNotification: false
     }
   );
+});
+
+test("normalizeSettingsInput round-trips archive feedback toggles", () => {
+  const normalized = normalizeSettingsInput({
+    archiveFeedbackIcon: false,
+    archiveFeedbackNotification: true
+  });
+  assert.equal(normalized.archiveFeedbackIcon, false);
+  assert.equal(normalized.archiveFeedbackNotification, true);
+
+  const defaults = normalizeSettingsInput({});
+  assert.equal(defaults.archiveFeedbackIcon, true);
+  assert.equal(defaults.archiveFeedbackNotification, false);
 });
 
 test("normalizeSettingsInput defaults theme to system when missing or invalid", () => {

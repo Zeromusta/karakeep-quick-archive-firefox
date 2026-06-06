@@ -1,10 +1,15 @@
 import {
+  ARCHIVE_FLASH_DURATION_MS,
   COMMAND_NAMES,
   MANUAL_REVIEW_ACTIONS,
   MESSAGE_TYPES,
   STORAGE_KEYS
 } from "../shared/constants.js";
-import { applyIconTheme, watchSystemThemeChanges } from "../shared/icon-theme.js";
+import {
+  applyIconTheme,
+  flashArchivedIcon,
+  watchSystemThemeChanges
+} from "../shared/icon-theme.js";
 import { isEligibleUrl, logDebug, normalizeSettingsInput } from "../shared/utils.js";
 import {
   archiveFromClosedHistory,
@@ -171,6 +176,11 @@ async function archiveActiveTab() {
   const item = await enqueueArchiveFromSnapshot(snapshot);
   archiveInitiatedCloses.add(activeTab.id);
 
+  // The item is now persisted ("captured"), so confirm to the user before the
+  // tab closes — regardless of whether the archive later succeeds or fails.
+  // Fire-and-forget so the close stays instant.
+  void showArchiveCaptureFeedback(snapshot);
+
   try {
     await browser.tabs.remove(activeTab.id);
   } catch (error) {
@@ -180,6 +190,39 @@ async function archiveActiveTab() {
   }
 
   await waitForProcessing(item.id);
+}
+
+async function showArchiveCaptureFeedback(snapshot) {
+  const settings = await getSettings();
+  if (settings.archiveFeedbackIcon) {
+    void flashArchivedIcon();
+  }
+  if (settings.archiveFeedbackNotification) {
+    void notifyArchived(snapshot.title || snapshot.url || "Tab");
+  }
+}
+
+async function notifyArchived(title) {
+  if (!browser.notifications?.create) {
+    return;
+  }
+  try {
+    const notificationId = await browser.notifications.create({
+      type: "basic",
+      iconUrl: browser.runtime.getURL("icons/icon-light-128.png"),
+      title: "Karakeep Quick Archive",
+      message: `${title} archived.`
+    });
+    // Best-effort "lingers ~2s" — clear it after the same window as the icon
+    // tick. Platforms that auto-dismiss sooner simply no-op here.
+    if (browser.notifications.clear) {
+      setTimeout(() => {
+        void browser.notifications.clear(notificationId);
+      }, ARCHIVE_FLASH_DURATION_MS);
+    }
+  } catch {
+    // Notifications are cosmetic; never let them break the archive flow.
+  }
 }
 
 async function handleTabRemoved(tabId, removeInfo) {

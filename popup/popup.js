@@ -257,7 +257,10 @@ async function renderPopup() {
   const state = await browser.storage.local.get(Object.values(STORAGE_KEYS));
   const settings = normalizeSettingsInput(state[STORAGE_KEYS.settings]);
   applyDocumentTheme(settings.theme);
-  renderMonitoringToggle(settings.monitoringPaused);
+  const isConfigured = Boolean(
+    settings.karakeepBaseUrl && settings.karakeepApiKey
+  );
+  renderMonitoringToggle(settings.monitoringPaused, isConfigured);
   const now = Date.now();
   const processingItems = Array.isArray(state[STORAGE_KEYS.processingItems])
     ? [...state[STORAGE_KEYS.processingItems]].sort(
@@ -315,13 +318,27 @@ async function renderPopup() {
   updateOverflowState();
 }
 
-function renderMonitoringToggle(isPaused) {
-  monitoringToggleButton.textContent = isPaused ? "Paused" : "Monitoring";
+function renderMonitoringToggle(isPaused, isConfigured) {
+  monitoringToggleButton.textContent = isPaused
+    ? "Paused"
+    : isConfigured
+      ? "Monitoring"
+      : "Not Configured";
   monitoringToggleButton.classList.toggle("is-paused", Boolean(isPaused));
+  monitoringToggleButton.classList.toggle(
+    "is-unconfigured",
+    !isPaused && !isConfigured
+  );
   monitoringToggleButton.setAttribute("aria-pressed", isPaused ? "true" : "false");
-  const tooltip = isPaused
-    ? "Tab closures aren't being logged. Click to resume."
-    : "Tab closures are being logged. Click to pause.";
+  let tooltip;
+  if (isPaused) {
+    tooltip = "Tab closures aren't being logged. Click to resume.";
+  } else if (!isConfigured) {
+    tooltip =
+      "Karakeep isn't set up yet. Tab closures are still being logged. Click to pause.";
+  } else {
+    tooltip = "Tab closures are being logged. Click to pause.";
+  }
   monitoringToggleButton.dataset.tooltip = tooltip;
   monitoringToggleButton.setAttribute("aria-label", tooltip);
 }

@@ -132,6 +132,55 @@ test("archive command creates processing immediately, closes the tab, and resolv
   assert.equal(archivedHistory[0].status, "archived");
 });
 
+test("archive command fires a desktop notification when that feedback is enabled", async () => {
+  const browser = (globalThis.browser = createBrowserMock({
+    tabs: [
+      {
+        id: 7,
+        windowId: 1,
+        active: true,
+        url: "https://example.com/notify-me",
+        title: "Notify Me",
+        favIconUrl: null
+      }
+    ],
+    initialStorage: {
+      [STORAGE_KEYS.settings]: {
+        karakeepBaseUrl: "https://karakeep.example.com",
+        karakeepApiKey: "secret-key",
+        requestTimeoutSeconds: 15,
+        historyRetentionHours: 168,
+        showFavicons: true,
+        maxHistoryItems: 500,
+        debugLogging: false,
+        archiveFeedbackNotification: true
+      }
+    },
+    grantedOrigins: ["https://karakeep.example.com/*"]
+  }));
+  globalThis.fetch = async () => ({
+    status: 201,
+    async json() {
+      return { id: "bookmark-notify" };
+    }
+  });
+
+  await importFresh(controllerModuleUrl);
+  await waitFor(() => getCachedTabIds().length === 1);
+
+  await browser.commands.onCommand.emit("archive-current-tab");
+
+  const notifications = await waitFor(() =>
+    browser.__mock.notifications.length === 1
+      ? browser.__mock.notifications
+      : null
+  );
+
+  assert.equal(notifications.length, 1);
+  assert.match(notifications[0].message, /Notify Me archived\./);
+  assert.deepEqual(browser.__mock.removedTabIds, [7]);
+});
+
 test("controller routes runtime retry and mark-closed actions through background state changes", async () => {
   const retryBrowser = (globalThis.browser = createBrowserMock({
     tabs: [],
