@@ -8,15 +8,20 @@ let currentMode = ICON_THEMES.system;
 let currentPaused = false;
 let themeListenerAttached = false;
 let flashTimer = null;
+let flashActive = false;
 
 export async function applyIconTheme(iconTheme, monitoringPaused = false) {
   if (typeof browser === "undefined" || !browser.action?.setIcon) {
     return;
   }
-  // A theme or pause change supersedes any in-flight archived-tick flash.
-  clearFlashTimer();
   currentMode = iconTheme;
   currentPaused = Boolean(monitoringPaused);
+
+  // Don't clobber an in-flight archived-tick flash; its revert timer will
+  // repaint with these latest values when it finishes.
+  if (flashActive) {
+    return;
+  }
 
   const pathMap = await resolvePathMap(iconTheme);
 
@@ -47,10 +52,12 @@ export async function flashArchivedIcon() {
     return;
   }
   clearFlashTimer();
+  flashActive = true;
   await setActionImageData(imageData);
   await setActionTitle("Karakeep Quick Archive — Archived");
   flashTimer = setTimeout(() => {
     flashTimer = null;
+    flashActive = false;
     void applyIconTheme(currentMode, currentPaused);
   }, ARCHIVE_FLASH_DURATION_MS);
 }
