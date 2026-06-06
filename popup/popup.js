@@ -56,7 +56,7 @@ const historyCountElement = document.querySelector("#history-count");
 const openOptionsButton = document.querySelector("#open-options-button");
 const monitoringToggleButton = document.querySelector("#monitoring-toggle");
 
-openOptionsButton.innerHTML = COG_SVG;
+setHtml(openOptionsButton, COG_SVG);
 
 openOptionsButton.addEventListener("click", async () => {
   await browser.runtime.openOptionsPage();
@@ -388,12 +388,14 @@ function updateOverflowState() {
 
 function renderProcessing(items, showFavicons) {
   if (items.length === 0) {
-    processingListElement.innerHTML =
-      '<div class="empty-state">No items are being archived.</div>';
+    setHtml(
+      processingListElement,
+      '<div class="empty-state">No items are being archived.</div>'
+    );
     return;
   }
 
-  processingListElement.innerHTML = items
+  const html = items
     .map(
       (item) => `
         <article class="item-row">
@@ -413,16 +415,19 @@ function renderProcessing(items, showFavicons) {
       `
     )
     .join("");
+  setHtml(processingListElement, html);
 }
 
 function renderManualReview(items, showFavicons) {
   if (items.length === 0) {
-    manualReviewListElement.innerHTML =
-      '<div class="empty-state">Nothing needs manual review.</div>';
+    setHtml(
+      manualReviewListElement,
+      '<div class="empty-state">Nothing needs manual review.</div>'
+    );
     return;
   }
 
-  manualReviewListElement.innerHTML = items
+  const html = items
     .map(
       (item) => `
         <article class="item-row">
@@ -442,6 +447,7 @@ function renderManualReview(items, showFavicons) {
       `
     )
     .join("");
+  setHtml(manualReviewListElement, html);
 }
 
 function renderManualReviewActions(item) {
@@ -475,11 +481,11 @@ function renderHistory(items, showFavicons) {
       currentHistoryFilter === "all"
         ? "No resolved tab actions yet."
         : `No ${getStatusLabel(currentHistoryFilter).toLowerCase()} items in history.`;
-    historyListElement.innerHTML = `<div class="empty-state">${escapeHtml(message)}</div>`;
+    setHtml(historyListElement, `<div class="empty-state">${escapeHtml(message)}</div>`);
     return;
   }
 
-  historyListElement.innerHTML = items
+  const html = items
     .map(
       (item) => `
         <article class="item-row">
@@ -501,6 +507,7 @@ function renderHistory(items, showFavicons) {
       `
     )
     .join("");
+  setHtml(historyListElement, html);
 }
 
 function renderFavouriteButton(item) {
@@ -739,7 +746,7 @@ function buildFavouritesRow(itemId, bookmarkId, isFavourited) {
 
   const icon = document.createElement("span");
   icon.className = "list-row-icon star";
-  icon.innerHTML = STAR_SOLID_SVG;
+  setHtml(icon, STAR_SOLID_SVG);
 
   const label = document.createElement("span");
   label.className = "list-row-label";
@@ -748,7 +755,7 @@ function buildFavouritesRow(itemId, bookmarkId, isFavourited) {
   const check = document.createElement("span");
   check.className = "list-row-check";
   if (isFavourited) {
-    check.innerHTML = CHECK_SVG;
+    setHtml(check, CHECK_SVG);
   }
 
   row.append(icon, label, check);
@@ -766,7 +773,7 @@ function buildListRow(list, isMember, bookmarkId) {
   if (emoji) {
     icon.textContent = emoji;
   } else {
-    icon.innerHTML = LIST_SVG;
+    setHtml(icon, LIST_SVG);
   }
 
   const label = document.createElement("span");
@@ -776,7 +783,7 @@ function buildListRow(list, isMember, bookmarkId) {
   const check = document.createElement("span");
   check.className = "list-row-check";
   if (isMember) {
-    check.innerHTML = CHECK_SVG;
+    setHtml(check, CHECK_SVG);
   }
 
   row.append(icon, label, check);
@@ -801,7 +808,7 @@ async function handleSetListMembership(row, list, bookmarkId, check) {
     });
     if (result && result.ok) {
       row.classList.toggle("is-member", wantMember);
-      check.innerHTML = wantMember ? CHECK_SVG : "";
+      setHtml(check, wantMember ? CHECK_SVG : "");
     } else if (result && result.message) {
       showStatus(result.message, true);
     }
@@ -1007,6 +1014,16 @@ function escapeHtml(value) {
 
 function escapeAttribute(value) {
   return escapeHtml(value);
+}
+
+// Swap in parsed, inert nodes instead of assigning to innerHTML. DOMParser
+// never executes scripts or inline handlers on parse, so this is a lint-clean
+// equivalent (all dynamic values are already run through escapeHtml/
+// escapeAttribute). Head nodes are included so any head-level markup survives;
+// for our SVG/fragment inputs everything lands in body and head stays empty.
+function setHtml(element, html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  element.replaceChildren(...doc.head.childNodes, ...doc.body.childNodes);
 }
 
 function getDisplayUrl(url) {

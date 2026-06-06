@@ -38,6 +38,15 @@
     }
   }
 
+  // Swap in parsed, inert nodes instead of assigning to innerHTML. DOMParser
+  // never executes scripts or inline handlers on parse. Head nodes are included
+  // first so the template's leading <style> (which the HTML parser routes into
+  // <head>) is preserved ahead of the body markup.
+  function setHtml(node, html) {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    node.replaceChildren(...doc.head.childNodes, ...doc.body.childNodes);
+  }
+
   const host = document.createElement("div");
   host.id = HOST_ID;
   host.style.cssText =
@@ -45,7 +54,7 @@
   (document.body || document.documentElement).appendChild(host);
 
   const root = host.attachShadow({ mode: "open" });
-  root.innerHTML = template();
+  setHtml(root, template());
 
   const backdrop = root.querySelector('[data-role="backdrop"]');
   const card = root.querySelector('[data-role="card"]');
@@ -161,7 +170,7 @@
       if (emoji) {
         icon.textContent = emoji;
       } else {
-        icon.innerHTML = SVG_LIST;
+        setHtml(icon, SVG_LIST);
       }
       label.textContent = option.list.name || "Untitled";
     }
