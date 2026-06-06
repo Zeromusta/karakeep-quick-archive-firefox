@@ -7,13 +7,18 @@ closes the tab. Designed to make "archive this tab" feel as cheap as
 
 ## Features
 
-- **One-shortcut archive**: press `Cmd+Alt+W` (macOS) or `Ctrl+Alt+W`
+- **One-shortcut archive**: press `Ctrl+Cmd+W` (macOS) or `Ctrl+Alt+W`
   (Windows/Linux) to send the current tab to Karakeep and close it
   immediately — no waiting on the network.
+- **Archive into a list**: press `Ctrl+Cmd+E` (macOS) or `Ctrl+Alt+E`
+  (Windows/Linux) to open a list picker over the current page (the page
+  dims behind it). Pick **Favourites** or any manual Karakeep list by
+  pressing `1`–`9` or clicking; the tab is archived into that list and
+  closed. `Esc` or a click outside cancels.
 - **Compact popup** with three sections that hide themselves when empty:
   - **Processing** — archive requests still in flight.
-  - **Manual Review** — failed archive or favourite-toggle attempts, with
-    Retry / Mark closed / Dismiss controls.
+  - **Manual Review** — failed archive, favourite-toggle, or list-add
+    attempts, with Retry / Mark closed / Dismiss controls.
   - **History** — recently closed, archived, and skipped tabs, filterable
     by All / Closed / Archived / Skipped.
 - **Two-click promotions**: clicking the `Closed` badge on a history row
@@ -22,9 +27,11 @@ closes the tab. Designed to make "archive this tab" feel as cheap as
   the entries matching the active filter. Clicking elsewhere reverts.
 - **Open in Karakeep**: archived and skipped history rows link directly
   to their bookmark in the Karakeep web UI.
-- **Favourite toggle**: a star button on each archived/skipped row
-  toggles the bookmark's favourited state in Karakeep. The state syncs
-  across every history row that references the same bookmark.
+- **Favourite & list controls**: each archived/skipped history row has a
+  star button that toggles the bookmark's favourited state, and a list
+  button that opens an inline picker to add or remove the bookmark from
+  any manual Karakeep list (current membership is pre-checked). Favourite
+  state syncs across every history row that references the same bookmark.
 
 ## Screenshot
 
@@ -78,18 +85,27 @@ changes without restarting Firefox.
 
 ```
 manifest.json              # MV3 manifest; declares permissions, action,
-                           # commands (Ctrl+Alt+W), icons.
+                           # commands (Ctrl+Alt+W archive, Ctrl+Alt+E
+                           # archive-to-list), icons.
 background/
   controller.js            # Listener registration, message routing,
-                           # archive command, idempotent init.
+                           # archive commands, idempotent init.
   archive-queue.js         # In-flight job tracking; resumes on startup.
+                           # Runs the optional post-archive list/favourite
+                           # step and queues retries on failure.
   history-store.js         # Single source of truth for storage.local;
                            # serializes all writes behind a promise lock.
-  karakeep-client.js       # POST /api/v1/bookmarks (archive) and
-                           # PATCH /api/v1/bookmarks/{id} (favourite).
+  karakeep-client.js       # POST /api/v1/bookmarks (archive), PATCH
+                           # /api/v1/bookmarks/{id} (favourite), GET
+                           # /api/v1/lists, and list membership PUT/DELETE.
+  list-service.js          # Fetch lists + membership; add/remove a
+                           # bookmark from a list (used by popup + overlay).
   tab-snapshot-cache.js    # In-memory map of currently open tabs,
                            # rehydrated from storage.session on wake.
   cleanup.js               # Alarm-driven history pruning.
+content/
+  list-picker.js           # On-demand shadow-DOM overlay for the
+                           # archive-to-list shortcut (numeric hotkeys).
 popup/                     # Toolbar popup UI.
 options/                   # Settings page.
 shared/                    # Constants, utilities, JSDoc type defs.
@@ -105,7 +121,7 @@ in [RELEASING.md](RELEASING.md).
 
 ## Credits
 
-- Star icons from [Font Awesome Free 6](https://fontawesome.com/),
+- Star, list, and check icons from [Font Awesome Free 6](https://fontawesome.com/),
   licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 - Built around the [Karakeep](https://karakeep.app/) self-hosted
   bookmarking API.

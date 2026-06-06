@@ -324,6 +324,134 @@ h2 {
   cursor: progress;
 }
 
+.list-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: light-dark(#94a3b8, #64748b);
+  cursor: pointer;
+  line-height: 0;
+  transition: color 0.15s ease, transform 0.1s ease;
+}
+
+.list-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.list-button:hover {
+  color: light-dark(#2f7bff, #5b9dff);
+  background: transparent;
+}
+
+.list-button:active {
+  transform: scale(0.92);
+}
+
+/* The list button owns the right-edge gap; the favourite button then sits
+   immediately after it rather than also claiming the free space. */
+.list-button + .favourite-button {
+  margin-left: 0;
+}
+
+.list-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 4px;
+  border: 1px solid light-dark(#e2e8f0, #334155);
+  border-radius: 8px;
+  background: light-dark(#f8fafc, #0f172a);
+}
+
+.list-panel[hidden] {
+  display: none;
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: light-dark(#0f172a, #e2e8f0);
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.list-row:hover {
+  background: light-dark(#eef2f7, #1e293b);
+}
+
+.list-row:active {
+  transform: scale(0.99);
+}
+
+.list-row[data-busy="true"] {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.list-row-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  line-height: 1;
+  color: light-dark(#64748b, #94a3b8);
+}
+
+.list-row-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.list-row-icon.star {
+  color: light-dark(#f59e0b, #fbbf24);
+}
+
+.list-row-label {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.list-row-check {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  line-height: 0;
+  color: light-dark(#2f7bff, #5b9dff);
+}
+
+.list-row-check svg {
+  width: 12px;
+  height: 12px;
+}
+
+.list-panel-note {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: light-dark(#64748b, #94a3b8);
+}
+
 .error-text {
   color: light-dark(#b91c1c, #fca5a5);
 }

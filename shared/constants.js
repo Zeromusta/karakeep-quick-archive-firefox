@@ -89,16 +89,22 @@ export const MESSAGE_TYPES = Object.freeze({
   archiveClosedHistoryItem: "archiveClosedHistoryItem",
   clearHistory: "clearHistory",
   toggleBookmarkFavourite: "toggleBookmarkFavourite",
-  dismissManualReview: "dismissManualReview"
+  dismissManualReview: "dismissManualReview",
+  getLists: "getLists",
+  archiveCurrentTabToList: "archiveCurrentTabToList",
+  fetchListsWithMembership: "fetchListsWithMembership",
+  setListMembership: "setListMembership"
 });
 
 export const MANUAL_REVIEW_ACTIONS = Object.freeze({
   archive: "archive",
-  favouriteToggle: "favourite-toggle"
+  favouriteToggle: "favourite-toggle",
+  listAdd: "list-add"
 });
 
 export const COMMAND_NAMES = Object.freeze({
-  archiveCurrentTab: "archive-current-tab"
+  archiveCurrentTab: "archive-current-tab",
+  archiveCurrentTabToList: "archive-current-tab-to-list"
 });
 
 export const ELIGIBLE_PROTOCOLS = new Set(["http:", "https:"]);

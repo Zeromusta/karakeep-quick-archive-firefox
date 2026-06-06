@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  MANUAL_REVIEW_ACTIONS,
   MESSAGE_TYPES,
   SESSION_STORAGE_KEYS,
   STORAGE_KEYS
@@ -416,4 +417,199 @@ test("controller records Closed history for a tab that was closed before the cac
   assert.equal(historyItems.length, 1);
   assert.equal(historyItems[0].status, "closed");
   assert.equal(historyItems[0].url, "https://example.com/closed-during-suspension");
+});
+
+const LIST_SETTINGS = {
+  karakeepBaseUrl: "https://karakeep.example.com",
+  karakeepApiKey: "secret-key",
+  requestTimeoutSeconds: 15,
+  historyRetentionHours: 168,
+  showFavicons: true,
+  maxHistoryItems: 500,
+  debugLogging: false
+};
+
+test("getLists message returns only manual lists", async () => {
+  const browser = (globalThis.browser = createBrowserMock({
+    tabs: [],
+    initialStorage: { [STORAGE_KEYS.settings]: LIST_SETTINGS },
+    grantedOrigins: ["https://karakeep.example.com/*"]
+  }));
+  globalThis.fetch = async (url) => {
+    if (url.endsWith("/api/v1/lists")) {
+      return {
+        status: 200,
+        async json() {
+          return {
+            lists: [
+              { id: "l1", name: "Reading", type: "manual" },
+              { id: "l2", name: "Smart", type: "smart" }
+            ]
+          };
+        }
+      };
+    }
+    return { status: 404, async json() { return {}; } };
+  };
+
+  await importFresh(controllerModuleUrl);
+  await flushMicrotasks();
+
+  const response = await browser.runtime.sendMessage({ type: MESSAGE_TYPES.getLists });
+  assert.equal(response.ok, true);
+  assert.deepEqual(
+    response.lists.map((list) => list.id),
+    ["l1"]
+  );
+});
+
+test("archiveCurrentTabToList archives the sender tab, files it into the list, and closes it", async () => {
+  const tab = {
+    id: 11,
+    windowId: 1,
+    active: true,
+    url: "https://example.com/save",
+    title: "Save Me",
+    favIconUrl: null
+  };
+  const browser = (globalThis.browser = createBrowserMock({
+    tabs: [tab],
+    initialStorage: { [STORAGE_KEYS.settings]: LIST_SETTINGS },
+    grantedOrigins: ["https://karakeep.example.com/*"]
+  }));
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, method: options.method });
+    if (url.endsWith("/api/v1/bookmarks") && options.method === "POST") {
+      return { status: 201, async json() { return { id: "bm-1" }; } };
+    }
+    if (url.includes("/api/v1/lists/") && options.method === "PUT") {
+      return { status: 204, async json() { throw new Error("204 has no body"); } };
+    }
+    return { status: 500, async json() { return {}; } };
+  };
+
+  await importFresh(controllerModuleUrl);
+  await waitFor(() => getCachedTabIds().length === 1);
+
+  const [result] = await browser.runtime.onMessage.emit(
+    { type: MESSAGE_TYPES.archiveCurrentTabToList, listId: "list-1", listName: "Reading" },
+    { id: "content-script", tab }
+  );
+  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(browser.__mock.removedTabIds, [11]);
+
+  const state = await browser.storage.local.get([
+    STORAGE_KEYS.historyItems,
+    STORAGE_KEYS.manualReviewItems
+  ]);
+  assert.equal(state.historyItems.length, 1);
+  assert.equal(state.historyItems[0].status, "archived");
+  assert.equal(state.historyItems[0].bookmarkId, "bm-1");
+  assert.deepEqual(state.manualReviewItems, []);
+  assert.ok(
+    calls.some(
+      (call) =>
+        call.method === "PUT" &&
+        call.url.endsWith("/api/v1/lists/list-1/bookmarks/bm-1")
+    )
+  );
+});
+
+test("archiveCurrentTabToList records a list-add manual review entry when filing fails", async () => {
+  const tab = {
+    id: 12,
+    windowId: 1,
+    active: true,
+    url: "https://example.com/save2",
+    title: "Save Me 2",
+    favIconUrl: null
+  };
+  const browser = (globalThis.browser = createBrowserMock({
+    tabs: [tab],
+    initialStorage: { [STORAGE_KEYS.settings]: LIST_SETTINGS },
+    grantedOrigins: ["https://karakeep.example.com/*"]
+  }));
+  globalThis.fetch = async (url, options) => {
+    if (url.endsWith("/api/v1/bookmarks") && options.method === "POST") {
+      return { status: 201, async json() { return { id: "bm-2" }; } };
+    }
+    if (url.includes("/api/v1/lists/") && options.method === "PUT") {
+      return { status: 500, async json() { return {}; } };
+    }
+    return { status: 404, async json() { return {}; } };
+  };
+
+  await importFresh(controllerModuleUrl);
+  await waitFor(() => getCachedTabIds().length === 1);
+
+  await browser.runtime.onMessage.emit(
+    { type: MESSAGE_TYPES.archiveCurrentTabToList, listId: "list-9", listName: "Later" },
+    { id: "content-script", tab }
+  );
+
+  const state = await browser.storage.local.get([
+    STORAGE_KEYS.historyItems,
+    STORAGE_KEYS.manualReviewItems
+  ]);
+  // The archive itself succeeded...
+  assert.equal(state.historyItems.length, 1);
+  assert.equal(state.historyItems[0].status, "archived");
+  assert.equal(state.historyItems[0].bookmarkId, "bm-2");
+  // ...but the list add failed and is queued for retry.
+  assert.equal(state.manualReviewItems.length, 1);
+  assert.equal(state.manualReviewItems[0].failedAction, MANUAL_REVIEW_ACTIONS.listAdd);
+  assert.equal(state.manualReviewItems[0].bookmarkId, "bm-2");
+  assert.equal(state.manualReviewItems[0].listId, "list-9");
+});
+
+test("retryManualReview re-files a failed list-add and clears the entry", async () => {
+  const browser = (globalThis.browser = createBrowserMock({
+    tabs: [],
+    initialStorage: {
+      [STORAGE_KEYS.settings]: LIST_SETTINGS,
+      [STORAGE_KEYS.manualReviewItems]: [
+        {
+          id: "la-1",
+          failedAction: MANUAL_REVIEW_ACTIONS.listAdd,
+          bookmarkId: "bm-3",
+          listId: "list-3",
+          listName: "Reading",
+          url: "https://example.com/x",
+          title: "X",
+          favIconUrl: null,
+          sourceWindowId: 1,
+          requestedAt: Date.now() - 1000,
+          failedAt: Date.now(),
+          state: "failed",
+          attemptCount: 1,
+          lastError: "Could not reach Karakeep"
+        }
+      ]
+    },
+    grantedOrigins: ["https://karakeep.example.com/*"]
+  }));
+  let putCalled = false;
+  globalThis.fetch = async (url, options) => {
+    if (url.includes("/api/v1/lists/") && options.method === "PUT") {
+      putCalled = true;
+      return { status: 204, async json() { throw new Error("204 has no body"); } };
+    }
+    return { status: 404, async json() { return {}; } };
+  };
+
+  await importFresh(controllerModuleUrl);
+  await flushMicrotasks();
+
+  const result = await browser.runtime.sendMessage({
+    type: MESSAGE_TYPES.retryManualReview,
+    itemId: "la-1"
+  });
+  assert.deepEqual(result, { ok: true });
+  assert.equal(putCalled, true);
+
+  const { [STORAGE_KEYS.manualReviewItems]: items } = await browser.storage.local.get(
+    STORAGE_KEYS.manualReviewItems
+  );
+  assert.deepEqual(items, []);
 });

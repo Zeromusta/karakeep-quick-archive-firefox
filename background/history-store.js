@@ -59,7 +59,7 @@ export async function getProcessingItems() {
   return state.processingItems;
 }
 
-export async function createProcessingItem(snapshot) {
+export async function createProcessingItem(snapshot, extras = {}) {
   const item = {
     id: generateId(),
     url: snapshot.url,
@@ -68,7 +68,11 @@ export async function createProcessingItem(snapshot) {
     requestedAt: Date.now(),
     sourceWindowId: snapshot.windowId,
     state: ITEM_STATES.processing,
-    attemptCount: 1
+    attemptCount: 1,
+    // Drive an optional post-archive step (overlay "archive to list" / favourite).
+    ...(extras.listId ? { listId: extras.listId } : {}),
+    ...(extras.listName ? { listName: extras.listName } : {}),
+    ...(extras.favourite ? { favourite: true } : {})
   };
 
   await updateState((state) => {
@@ -288,7 +292,43 @@ export async function recordFavouriteToggleFailure({
   return failureItem;
 }
 
-export async function recordFavouriteToggleRetryFailure(itemId, lastError) {
+// The archive itself succeeded but filing the bookmark into the chosen list
+// failed. Record a manual-review entry so the user can retry just the list add.
+export async function recordListAddFailure({
+  item,
+  bookmarkId,
+  listId,
+  listName,
+  lastError
+}) {
+  const failureItem = {
+    id: generateId(),
+    bookmarkId,
+    listId,
+    listName: listName ?? null,
+    url: item.url,
+    title: item.title,
+    favIconUrl: item.favIconUrl ?? null,
+    sourceWindowId: item.sourceWindowId,
+    requestedAt: Date.now(),
+    failedAt: Date.now(),
+    state: ITEM_STATES.failed,
+    failedAction: MANUAL_REVIEW_ACTIONS.listAdd,
+    attemptCount: 1,
+    lastError
+  };
+  await updateState((state) => {
+    state.manualReviewItems = sortDescendingBy(
+      [failureItem, ...state.manualReviewItems],
+      "failedAt"
+    );
+  });
+  return failureItem;
+}
+
+// Action-agnostic: bumps the failure timestamp / attempt count on a manual-review
+// entry after a retry fails (used by both favourite-toggle and list-add retries).
+export async function recordManualReviewRetryFailure(itemId, lastError) {
   await updateState((state) => {
     state.manualReviewItems = state.manualReviewItems.map((item) => {
       if (item.id !== itemId) {

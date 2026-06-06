@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { DEFAULT_SETTINGS, HISTORY_STATUS, STORAGE_KEYS } from "../shared/constants.js";
+import {
+  DEFAULT_SETTINGS,
+  HISTORY_STATUS,
+  MANUAL_REVIEW_ACTIONS,
+  STORAGE_KEYS
+} from "../shared/constants.js";
 import { createBrowserMock } from "./helpers/browser-mock.js";
 import { importFresh } from "./helpers/module.js";
 
@@ -126,4 +131,83 @@ test("pruneHistory removes expired entries using the configured retention period
 
   assert.equal(historyItems.length, 1);
   assert.equal(historyItems[0].id, "fresh");
+});
+
+test("createProcessingItem threads list/favourite extras onto the item", async () => {
+  globalThis.browser = createBrowserMock();
+  const historyStore = await importFresh(historyStoreModuleUrl);
+  await historyStore.ensureStorageDefaults();
+
+  const listed = await historyStore.createProcessingItem(
+    { url: "https://example.com/a", title: "A", favIconUrl: null, windowId: 1 },
+    { listId: "list-1", listName: "Reading" }
+  );
+  assert.equal(listed.listId, "list-1");
+  assert.equal(listed.listName, "Reading");
+  assert.equal(listed.favourite, undefined);
+
+  const favourited = await historyStore.createProcessingItem(
+    { url: "https://example.com/b", title: "B", favIconUrl: null, windowId: 1 },
+    { favourite: true }
+  );
+  assert.equal(favourited.favourite, true);
+  assert.equal(favourited.listId, undefined);
+});
+
+test("recordListAddFailure queues a retryable list-add manual review entry", async () => {
+  const browser = (globalThis.browser = createBrowserMock({
+    initialStorage: { [STORAGE_KEYS.settings]: DEFAULT_SETTINGS }
+  }));
+  const historyStore = await importFresh(historyStoreModuleUrl);
+  await historyStore.ensureStorageDefaults();
+
+  await historyStore.recordListAddFailure({
+    item: {
+      url: "https://example.com/a",
+      title: "Article A",
+      favIconUrl: null,
+      sourceWindowId: 1
+    },
+    bookmarkId: "bm-1",
+    listId: "list-1",
+    listName: "Reading",
+    lastError: "Could not reach Karakeep"
+  });
+
+  const { [STORAGE_KEYS.manualReviewItems]: items } = await browser.storage.local.get(
+    STORAGE_KEYS.manualReviewItems
+  );
+  assert.equal(items.length, 1);
+  assert.equal(items[0].failedAction, MANUAL_REVIEW_ACTIONS.listAdd);
+  assert.equal(items[0].bookmarkId, "bm-1");
+  assert.equal(items[0].listId, "list-1");
+  assert.equal(items[0].listName, "Reading");
+  assert.equal(items[0].attemptCount, 1);
+  assert.equal(items[0].lastError, "Could not reach Karakeep");
+});
+
+test("recordManualReviewRetryFailure bumps the attempt count and last error", async () => {
+  const browser = (globalThis.browser = createBrowserMock({
+    initialStorage: {
+      [STORAGE_KEYS.settings]: DEFAULT_SETTINGS,
+      [STORAGE_KEYS.manualReviewItems]: [
+        {
+          id: "m1",
+          failedAction: MANUAL_REVIEW_ACTIONS.listAdd,
+          attemptCount: 1,
+          failedAt: Date.now() - 1000,
+          lastError: "first"
+        }
+      ]
+    }
+  }));
+  const historyStore = await importFresh(historyStoreModuleUrl);
+
+  await historyStore.recordManualReviewRetryFailure("m1", "second");
+
+  const { [STORAGE_KEYS.manualReviewItems]: items } = await browser.storage.local.get(
+    STORAGE_KEYS.manualReviewItems
+  );
+  assert.equal(items[0].attemptCount, 2);
+  assert.equal(items[0].lastError, "second");
 });

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Karakeep Quick Archive",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Archive the current tab to Karakeep and close it immediately, with compact processing, manual review, and history views.",
   "browser_specific_settings": {
     "gecko": {
@@ -10,7 +10,7 @@
       "update_url": "https://zeromusta.github.io/karakeep-quick-archive-firefox/updates.json"
     }
   },
-  "permissions": ["tabs", "storage", "alarms", "notifications"],
+  "permissions": ["tabs", "storage", "alarms", "notifications", "scripting", "activeTab"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "icons": {
     "48": "icons/icon-light-48.png",
@@ -49,9 +49,16 @@
     "archive-current-tab": {
       "suggested_key": {
         "default": "Ctrl+Alt+W",
-        "mac": "Command+Alt+W"
+        "mac": "MacCtrl+Command+W"
       },
       "description": "Archive the current tab to Karakeep and close it"
+    },
+    "archive-current-tab-to-list": {
+      "suggested_key": {
+        "default": "Ctrl+Alt+E",
+        "mac": "MacCtrl+Command+E"
+      },
+      "description": "Archive the current tab to a Karakeep list and close it"
     }
   }
 }

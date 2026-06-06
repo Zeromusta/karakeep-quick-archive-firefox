@@ -31,9 +31,14 @@ import {
   pruneHistory,
   recordClosedHistory,
   recordFavouriteToggleFailure,
-  recordFavouriteToggleRetryFailure
+  recordManualReviewRetryFailure
 } from "./history-store.js";
-import { setBookmarkFavourite, testConnection } from "./karakeep-client.js";
+import {
+  addBookmarkToList,
+  setBookmarkFavourite,
+  testConnection
+} from "./karakeep-client.js";
+import { fetchListsWithMembership, setMembership } from "./list-service.js";
 import {
   forgetTab,
   getSnapshot,
@@ -93,20 +98,33 @@ function registerListeners() {
   });
 
   browser.commands.onCommand.addListener(async (command) => {
-    if (command !== COMMAND_NAMES.archiveCurrentTab) {
-      return;
-    }
-
     await initializeExtension();
-    await archiveActiveTab();
+
+    if (command === COMMAND_NAMES.archiveCurrentTab) {
+      await archiveActiveTab();
+    } else if (command === COMMAND_NAMES.archiveCurrentTabToList) {
+      await presentListPickerOnActiveTab();
+    }
   });
 
-  browser.runtime.onMessage.addListener(async (message) => {
+  browser.runtime.onMessage.addListener(async (message, sender) => {
     await initializeExtension();
 
     switch (message?.type) {
       case MESSAGE_TYPES.testConnection:
         return await testConnection(message.settings);
+      case MESSAGE_TYPES.getLists:
+        return await handleGetLists();
+      case MESSAGE_TYPES.archiveCurrentTabToList:
+        return await handleArchiveCurrentTabToList(message, sender);
+      case MESSAGE_TYPES.fetchListsWithMembership:
+        return await fetchListsWithMembership(message.bookmarkId);
+      case MESSAGE_TYPES.setListMembership:
+        return await setMembership(
+          message.bookmarkId,
+          message.listId,
+          message.member
+        );
       case MESSAGE_TYPES.retryManualReview:
         return await handleRetryManualReview(message.itemId);
       case MESSAGE_TYPES.markManualReviewClosed:
@@ -192,6 +210,75 @@ async function archiveActiveTab() {
   await waitForProcessing(item.id);
 }
 
+// Keyboard-shortcut entry point: inject the list-picker overlay into the active
+// tab. The command grants activeTab, so scripting.executeScript can reach the
+// page without a broad host grant. The overlay drives the rest via messages.
+async function presentListPickerOnActiveTab() {
+  const [activeTab] = await browser.tabs.query({
+    active: true,
+    currentWindow: true
+  });
+
+  if (!Number.isInteger(activeTab?.id) || !isEligibleUrl(activeTab.url ?? "")) {
+    return;
+  }
+
+  try {
+    await browser.scripting.executeScript({
+      target: { tabId: activeTab.id },
+      files: ["content/list-picker.js"]
+    });
+  } catch (error) {
+    const settings = await getSettings();
+    logDebug(
+      settings.debugLogging,
+      "Failed to inject list picker",
+      activeTab.id,
+      error
+    );
+  }
+}
+
+async function handleGetLists() {
+  const result = await fetchListsWithMembership(null);
+  return { ok: result.ok, lists: result.lists, message: result.message };
+}
+
+// Overlay pick handler: archive the sender's tab and file it into the chosen
+// list / favourite, then close the tab. Mirrors archiveActiveTab but keyed off
+// sender.tab (the message comes from the content script in the active tab).
+async function handleArchiveCurrentTabToList(message, sender) {
+  const tab = sender?.tab;
+  if (!Number.isInteger(tab?.id) || !isEligibleUrl(tab.url ?? "")) {
+    return { ok: false };
+  }
+
+  const snapshot = (await rememberTab(tab)) ?? (await getSnapshot(tab.id));
+  if (!snapshot) {
+    return { ok: false };
+  }
+
+  const extras = message.favourite
+    ? { favourite: true }
+    : { listId: message.listId, listName: message.listName };
+
+  const item = await enqueueArchiveFromSnapshot(snapshot, extras);
+  archiveInitiatedCloses.add(tab.id);
+
+  void showArchiveCaptureFeedback(snapshot);
+
+  try {
+    await browser.tabs.remove(tab.id);
+  } catch (error) {
+    const settings = await getSettings();
+    logDebug(settings.debugLogging, "Failed to close archived tab", tab.id, error);
+    archiveInitiatedCloses.delete(tab.id);
+  }
+
+  await waitForProcessing(item.id);
+  return { ok: true };
+}
+
 async function showArchiveCaptureFeedback(snapshot) {
   const settings = await getSettings();
   if (settings.archiveFeedbackIcon) {
@@ -260,6 +347,10 @@ async function handleRetryManualReview(itemId) {
     return await retryFavouriteToggleFromManualReview(manualItem);
   }
 
+  if (manualItem.failedAction === MANUAL_REVIEW_ACTIONS.listAdd) {
+    return await retryListAddFromManualReview(manualItem);
+  }
+
   const processingItem = await retryFailedArchive(itemId);
   if (!processingItem) {
     return { ok: false, message: "Item was not found." };
@@ -286,7 +377,27 @@ async function retryFavouriteToggleFromManualReview(manualItem) {
       error instanceof Error && error.message
         ? error.message
         : "Karakeep returned an error";
-    await recordFavouriteToggleRetryFailure(manualItem.id, message);
+    await recordManualReviewRetryFailure(manualItem.id, message);
+    return { ok: false, message };
+  }
+}
+
+// Re-files an archived bookmark into its list after the original add failed.
+// Mirrors ListService.retryAddFromManualReview in the iOS app.
+async function retryListAddFromManualReview(manualItem) {
+  if (!manualItem.bookmarkId || !manualItem.listId) {
+    return { ok: false, message: "Item was not found." };
+  }
+  try {
+    await addBookmarkToList(manualItem.bookmarkId, manualItem.listId);
+    await dismissManualReviewItem(manualItem.id);
+    return { ok: true };
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message
+        ? error.message
+        : "Karakeep returned an error";
+    await recordManualReviewRetryFailure(manualItem.id, message);
     return { ok: false, message };
   }
 }
