@@ -982,17 +982,23 @@ function positionTooltip(trigger) {
   const triggerRect = trigger.getBoundingClientRect();
   const tooltipRect = tooltipElement.getBoundingClientRect();
   const margin = 4;
+  // window.innerWidth includes a persistent scrollbar, but fixed elements
+  // are laid out against the viewport that excludes it — clamping against
+  // innerWidth pushed the tooltip under the scrollbar. clientWidth is the
+  // scrollbar-free viewport.
+  const viewportWidth = document.documentElement.clientWidth;
+  const viewportHeight = document.documentElement.clientHeight;
 
   let left = triggerRect.left;
   let top = triggerRect.bottom + margin;
 
-  if (left + tooltipRect.width > window.innerWidth - margin) {
-    left = window.innerWidth - tooltipRect.width - margin;
+  if (left + tooltipRect.width > viewportWidth - margin) {
+    left = viewportWidth - tooltipRect.width - margin;
   }
   if (left < margin) {
     left = margin;
   }
-  if (top + tooltipRect.height > window.innerHeight - margin) {
+  if (top + tooltipRect.height > viewportHeight - margin) {
     top = triggerRect.top - tooltipRect.height - margin;
   }
   if (top < margin) {
