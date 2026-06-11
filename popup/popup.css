@@ -34,18 +34,22 @@ body {
 }
 
 /* On platforms where the scrollbar takes layout space (Mac in
- * Firefox, persistent setups), reserve a gutter on overflow and
- * drop the popup's right padding — the gutter alone provides the
- * right spacing. On overlay-scrollbar platforms (Windows), this
- * rule doesn't apply and the popup's default 15px right padding
- * stays put with the overlay scrollbar floating over it.
+ * Firefox, persistent setups), reserve the gutter permanently and
+ * drop the popup's right padding — the empty gutter provides the
+ * right spacing, and a scrollbar appearing simply fills it. The
+ * gutter must not be conditional on overflow: that made the layout
+ * (and the popup bounds) differ between short and long lists, so
+ * the popup visibly shifted between tabs. On overlay-scrollbar
+ * platforms (Windows), this rule doesn't apply and the popup's
+ * default 15px right padding stays put with the overlay scrollbar
+ * floating over it.
  */
-html.persistent-scrollbar.has-overflow,
-html.persistent-scrollbar.has-overflow body {
+html.persistent-scrollbar,
+html.persistent-scrollbar body {
   scrollbar-gutter: stable;
 }
 
-html.persistent-scrollbar.has-overflow .popup {
+html.persistent-scrollbar .popup {
   padding-right: 0;
 }
 

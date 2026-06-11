@@ -328,8 +328,6 @@ async function renderPopup() {
   hideTooltip();
 
   restoreOpenListPanel();
-
-  updateOverflowState();
 }
 
 function renderMonitoringToggle(isPaused, isConfigured) {
@@ -370,19 +368,6 @@ function updateFilterPills() {
       "active",
       pill.dataset.historyFilter === currentHistoryFilter
     );
-  });
-}
-
-function updateOverflowState() {
-  // Toggle a class so CSS can switch between a plain 15px right padding
-  // (no overflow) and a scrollbar-gutter layout (with overflow). This
-  // gives a consistent ~15px right margin on macOS overlay scrollbars,
-  // macOS persistent scrollbars, and Windows alike — independent of
-  // each platform's idiosyncratic gutter sizing.
-  requestAnimationFrame(() => {
-    const root = document.documentElement;
-    const hasOverflow = root.scrollHeight > root.clientHeight;
-    root.classList.toggle("has-overflow", hasOverflow);
   });
 }
 
