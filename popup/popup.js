@@ -30,22 +30,6 @@ let pendingHistoryClear = false;
 // so the panel survives the storage-driven re-render a favourite toggle causes.
 let openListPanelItemId = null;
 
-// Detect whether the platform shows a scrollbar that takes layout space
-// (Mac in Firefox, persistent setups) versus an overlay scrollbar that
-// floats over content (Windows 11+, modern setups). scrollbar-gutter
-// only meaningfully reserves space in the former case.
-(() => {
-  const test = document.createElement("div");
-  test.style.cssText =
-    "width:100px;height:100px;overflow-y:scroll;position:absolute;top:-9999px;visibility:hidden;";
-  document.body.appendChild(test);
-  const persistent = test.offsetWidth > test.clientWidth;
-  test.remove();
-  if (persistent) {
-    document.documentElement.classList.add("persistent-scrollbar");
-  }
-})();
-
 const popupStatusElement = document.querySelector("#popup-status");
 const processingListElement = document.querySelector("#processing-list");
 const manualReviewListElement = document.querySelector("#manual-review-list");
@@ -967,10 +951,9 @@ function positionTooltip(trigger) {
   const triggerRect = trigger.getBoundingClientRect();
   const tooltipRect = tooltipElement.getBoundingClientRect();
   const margin = 4;
-  // window.innerWidth includes a persistent scrollbar, but fixed elements
-  // are laid out against the viewport that excludes it — clamping against
-  // innerWidth pushed the tooltip under the scrollbar. clientWidth is the
-  // scrollbar-free viewport.
+  // clientWidth is the viewport minus any viewport scrollbar (none in
+  // normal operation — .popup scrolls, not the viewport), unlike
+  // window.innerWidth which includes it.
   const viewportWidth = document.documentElement.clientWidth;
   const viewportHeight = document.documentElement.clientHeight;
 

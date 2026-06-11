@@ -27,30 +27,22 @@ body {
   background: light-dark(#f8fafc, #0f172a);
 }
 
+/* Scroll inside the popup rather than the viewport: a viewport
+ * scrollbar makes Firefox resize the panel itself on platforms where
+ * scrollbars take layout space (Mac), so the popup bounds depended on
+ * list length. With the scroller inside, the panel is always sized by
+ * the 380px root; when a scrollbar appears it slots into that fixed
+ * width and the content shifts over to make room. On overlay-scrollbar
+ * platforms (Windows) the scrollbar floats and nothing moves. 600px is
+ * Firefox's browser-action popup height cap.
+ */
 .popup {
   width: 100%;
   min-height: 320px;
+  max-height: 600px;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 15px;
-}
-
-/* On platforms where the scrollbar takes layout space (Mac in
- * Firefox, persistent setups), reserve the gutter permanently and
- * drop the popup's right padding — the empty gutter provides the
- * right spacing, and a scrollbar appearing simply fills it. The
- * gutter must not be conditional on overflow: that made the layout
- * (and the popup bounds) differ between short and long lists, so
- * the popup visibly shifted between tabs. On overlay-scrollbar
- * platforms (Windows), this rule doesn't apply and the popup's
- * default 15px right padding stays put with the overlay scrollbar
- * floating over it.
- */
-html.persistent-scrollbar,
-html.persistent-scrollbar body {
-  scrollbar-gutter: stable;
-}
-
-html.persistent-scrollbar .popup {
-  padding-right: 0;
 }
 
 .topbar,
