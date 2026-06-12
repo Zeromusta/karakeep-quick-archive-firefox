@@ -30,6 +30,123 @@
   // Three-lines-with-dots list glyph, matching the popup / iOS toolbar.
   const SVG_LIST = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="9" y1="6" x2="19" y2="6"/><line x1="9" y1="12" x2="19" y2="12"/><line x1="9" y1="18" x2="19" y2="18"/><circle cx="5" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="5" cy="18" r="1.3" fill="currentColor" stroke="none"/></svg>`;
 
+  // The picker's stylesheet lives in a JS string, not a <style> element in the
+  // template: template markup goes through DOMParser (setHtml), and Firefox
+  // applies the *page's* Content-Security-Policy to parser-created nodes, so on
+  // sites with a strict style-src (e.g. gov.uk's `style-src 'self'`) the
+  // template's <style> was silently dropped and the modal rendered unstyled
+  // (issue #7). Styles applied via CSSOM (constructed stylesheet) or via a
+  // createElement'd <style> — which keeps the content script's principal and is
+  // therefore CSP-exempt — survive such pages.
+  const PICKER_CSS = `
+    :host { all: initial; }
+    .backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .card {
+      width: min(360px, calc(100vw - 32px));
+      max-height: min(70vh, 560px);
+      display: flex;
+      flex-direction: column;
+      background: rgba(28, 28, 30, 0.98);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      overflow: hidden;
+      padding: 14px;
+    }
+    .card:focus { outline: none; }
+    .title { font-size: 15px; font-weight: 600; padding: 2px 4px 10px; }
+    .body {
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      text-align: left;
+      font: inherit;
+      font-size: 14px;
+      color: inherit;
+      background: transparent;
+      border: 0;
+      border-radius: 10px;
+      padding: 10px;
+      cursor: pointer;
+    }
+    .row:hover { background: rgba(255, 255, 255, 0.10); }
+    .badge {
+      flex: 0 0 auto;
+      width: 20px;
+      height: 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.7);
+      background: rgba(255, 255, 255, 0.10);
+      border-radius: 6px;
+    }
+    .badge-empty { background: transparent; }
+    .icon {
+      flex: 0 0 auto;
+      width: 18px;
+      height: 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .icon svg { width: 16px; height: 16px; display: block; }
+    .icon.star { color: #ffcc00; font-size: 15px; }
+    .label {
+      flex: 1 1 auto;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .note { padding: 10px; font-size: 13px; opacity: 0.7; }
+    .hint { padding: 10px 4px 2px; font-size: 11px; opacity: 0.5; }
+  `;
+
+  function applyPickerStyles(root) {
+    try {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(PICKER_CSS);
+      // Firefox < 153 Xray-blocks adoptedStyleSheets from content scripts
+      // (bug 1751346: push is missing on the wrapper, assignment throws
+      // "Accessing from Xray wrapper is not supported"), so this rung only
+      // carries Firefox 153+.
+      try {
+        root.adoptedStyleSheets.push(sheet);
+      } catch {
+        root.adoptedStyleSheets = [sheet];
+      }
+      return;
+    } catch {
+      // Fall through to the <style> element below.
+    }
+    // Unlike the DOMParser-routed template, a createElement'd <style> keeps
+    // the content script's principal, which Firefox exempts from the page's
+    // CSP — verified against a style-src 'self' page on Firefox 151.
+    const style = document.createElement("style");
+    style.textContent = PICKER_CSS;
+    root.prepend(style);
+  }
+
   function sendMessage(message) {
     try {
       return Promise.resolve(browser.runtime.sendMessage(message));
@@ -39,9 +156,9 @@
   }
 
   // Swap in parsed, inert nodes instead of assigning to innerHTML. DOMParser
-  // never executes scripts or inline handlers on parse. Head nodes are included
-  // first so the template's leading <style> (which the HTML parser routes into
-  // <head>) is preserved ahead of the body markup.
+  // never executes scripts or inline handlers on parse. Head nodes are spread
+  // first so any content the HTML parser routes into <head> stays ahead of the
+  // body markup.
   function setHtml(node, html) {
     const doc = new DOMParser().parseFromString(html, "text/html");
     node.replaceChildren(...doc.head.childNodes, ...doc.body.childNodes);
@@ -55,6 +172,7 @@
 
   const root = host.attachShadow({ mode: "open" });
   setHtml(root, template());
+  applyPickerStyles(root);
 
   const backdrop = root.querySelector('[data-role="backdrop"]');
   const card = root.querySelector('[data-role="card"]');
@@ -189,89 +307,6 @@
 
   function template() {
     return `
-      <style>
-        :host { all: initial; }
-        .backdrop {
-          position: absolute;
-          inset: 0;
-          background: rgba(0, 0, 0, 0.5);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-          -webkit-font-smoothing: antialiased;
-        }
-        .card {
-          width: min(360px, calc(100vw - 32px));
-          max-height: min(70vh, 560px);
-          display: flex;
-          flex-direction: column;
-          background: rgba(28, 28, 30, 0.98);
-          color: #fff;
-          border: 1px solid rgba(255, 255, 255, 0.14);
-          border-radius: 16px;
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-          overflow: hidden;
-          padding: 14px;
-        }
-        .card:focus { outline: none; }
-        .title { font-size: 15px; font-weight: 600; padding: 2px 4px 10px; }
-        .body {
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-        }
-        .row {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          width: 100%;
-          text-align: left;
-          font: inherit;
-          font-size: 14px;
-          color: inherit;
-          background: transparent;
-          border: 0;
-          border-radius: 10px;
-          padding: 10px;
-          cursor: pointer;
-        }
-        .row:hover { background: rgba(255, 255, 255, 0.10); }
-        .badge {
-          flex: 0 0 auto;
-          width: 20px;
-          height: 20px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 12px;
-          font-weight: 600;
-          color: rgba(255, 255, 255, 0.7);
-          background: rgba(255, 255, 255, 0.10);
-          border-radius: 6px;
-        }
-        .badge-empty { background: transparent; }
-        .icon {
-          flex: 0 0 auto;
-          width: 18px;
-          height: 18px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          line-height: 1;
-        }
-        .icon svg { width: 16px; height: 16px; display: block; }
-        .icon.star { color: #ffcc00; font-size: 15px; }
-        .label {
-          flex: 1 1 auto;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .note { padding: 10px; font-size: 13px; opacity: 0.7; }
-        .hint { padding: 10px 4px 2px; font-size: 11px; opacity: 0.5; }
-      </style>
       <div class="backdrop" data-role="backdrop">
         <div class="card" data-role="card" role="dialog" aria-modal="true" aria-label="Add to list" tabindex="-1">
           <div class="title">Add to list</div>
