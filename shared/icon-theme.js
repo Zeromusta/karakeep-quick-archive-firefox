@@ -8,6 +8,7 @@ let currentMode = ICON_THEMES.system;
 let currentPaused = false;
 let themeListenerAttached = false;
 let flashTimer = null;
+let flashReassertTimer = null;
 let flashActive = false;
 
 export async function applyIconTheme(iconTheme, monitoringPaused = false) {
@@ -51,10 +52,25 @@ export async function flashArchivedIcon() {
     // OffscreenCanvas unavailable — skip the cosmetic flash.
     return;
   }
-  clearFlashTimer();
+  clearFlashTimers();
   flashActive = true;
   await setActionImageData(imageData);
   await setActionTitle("Karakeep Quick Archive — Archived");
+  // The archive shortcut paints this tick and then closes the active tab. The
+  // resulting tab switch can make Firefox repaint the toolbar action from its
+  // manifest icon (mozilla/addons#736), landing right on top of the tick. The
+  // flashActive guard only stops our own applyIconTheme from clobbering it, so
+  // re-assert the tick a few times across the first moments to outlast that
+  // external repaint. Repainting identical pixels is a no-op once it sticks.
+  let reasserts = 0;
+  flashReassertTimer = setInterval(() => {
+    reasserts += 1;
+    void setActionImageData(imageData);
+    if (reasserts >= 4) {
+      clearInterval(flashReassertTimer);
+      flashReassertTimer = null;
+    }
+  }, 150);
   flashTimer = setTimeout(() => {
     flashTimer = null;
     flashActive = false;
@@ -62,10 +78,14 @@ export async function flashArchivedIcon() {
   }, ARCHIVE_FLASH_DURATION_MS);
 }
 
-function clearFlashTimer() {
+function clearFlashTimers() {
   if (flashTimer !== null) {
     clearTimeout(flashTimer);
     flashTimer = null;
+  }
+  if (flashReassertTimer !== null) {
+    clearInterval(flashReassertTimer);
+    flashReassertTimer = null;
   }
 }
 
