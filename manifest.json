@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Karakeep Quick Archive",
-  "version": "1.4.0",
-  "description": "Capture the current page, screenshot and banner in Karakeep, then close the tab. Queue uploads and flag incomplete captures for review.",
+  "version": "1.4.1",
+  "description": "Quickly capture and close the current tab, then build its page archive, screenshot and banner in the background. Flag incomplete captures.",
   "browser_specific_settings": {
     "gecko": {
       "id": "karakeep-quick-archive@zeromusta.com",

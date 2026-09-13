@@ -21,7 +21,7 @@ import {
 
 const activeJobs = new Map();
 
-export async function enqueueArchiveFromSnapshot(snapshot, extras = {}, capture = null) {
+export async function enqueueArchiveFromSnapshot(snapshot, extras = {}, capture = null, { deferProcessing = false } = {}) {
   let captureId;
   if (capture) {
     captureId = crypto.randomUUID();
@@ -32,7 +32,7 @@ export async function enqueueArchiveFromSnapshot(snapshot, extras = {}, capture 
     }
   }
   const item = await createProcessingItem(snapshot, { ...extras, captureId });
-  startProcessingJob(item);
+  if (!deferProcessing) startProcessingJob(item);
   return item;
 }
 
@@ -65,7 +65,7 @@ export async function resumeProcessingQueue() {
   await Promise.all(processingItems.map((item) => startProcessingJob(item)));
 }
 
-function startProcessingJob(item) {
+export function startProcessingJob(item) {
   if (activeJobs.has(item.id)) {
     return activeJobs.get(item.id);
   }

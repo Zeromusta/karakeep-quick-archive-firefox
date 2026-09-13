@@ -15,6 +15,7 @@ import {
   archiveFromClosedHistory,
   enqueueArchiveFromSnapshot,
   resumeProcessingQueue,
+  startProcessingJob,
   retryFailedArchive,
   waitForProcessing
 } from "./archive-queue.js";
@@ -39,7 +40,7 @@ import {
   testConnection
 } from "./karakeep-client.js";
 import { fetchListsWithMembership, setMembership } from "./list-service.js";
-import { capturePage, handleCaptureResource } from "./page-capture.js";
+import { capturePage } from "./page-capture.js";
 import {
   forgetTab,
   getSnapshot,
@@ -110,7 +111,6 @@ function registerListeners() {
   });
 
   browser.runtime.onMessage.addListener(async (message, sender) => {
-    if (message?.type === "captureResource") return handleCaptureResource(message, sender);
     await initializeExtension();
 
     switch (message?.type) {
@@ -260,7 +260,7 @@ async function captureArchiveAndClose(tab, snapshot, extras = {}) {
     await browser.action?.setBadgeText({ tabId: tab.id, text: "…" }).catch(() => {});
     await browser.action?.setTitle({ tabId: tab.id, title: "Capturing page…" }).catch(() => {});
     const capture = await capturePage(tab);
-    const item = await enqueueArchiveFromSnapshot(snapshot, extras, capture);
+    const item = await enqueueArchiveFromSnapshot(snapshot, extras, capture, { deferProcessing: true });
     // Do not close a different page if the user navigated while capturing.
     try {
       const current = await browser.tabs.get(tab.id);
@@ -270,7 +270,7 @@ async function captureArchiveAndClose(tab, snapshot, extras = {}) {
       }
     } catch { archiveInitiatedCloses.delete(tab.id); }
     void showArchiveCaptureFeedback(snapshot);
-    await waitForProcessing(item.id);
+    await startProcessingJob(item);
   } finally {
     capturingTabs.delete(tab.id);
     await browser.action?.setBadgeText({ tabId: tab.id, text: "" }).catch(() => {});

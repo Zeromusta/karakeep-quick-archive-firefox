@@ -4,6 +4,7 @@ export default {
     "scripts/**",
     "node_modules/**",
     "content/page-capture.js",
+    "background/capture-processor.js",
     "release-source.zip",
     ".github/**",
     ".claude/**",

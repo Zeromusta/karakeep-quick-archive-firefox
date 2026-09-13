@@ -9,11 +9,13 @@ closes the tab. Designed to make "archive this tab" feel as cheap as
 
 - **One-shortcut archive**: press `Ctrl+Cmd+W` (macOS) or `Ctrl+Alt+W`
   (Windows/Linux) to send the current tab to Karakeep and close it
-  after a local page capture. Uploads continue in the background.
+  after saving the live page state and screenshot locally. Resource downloads,
+  archive assembly and uploads continue in the background.
 - **Capture what Firefox can see**: bundles the rendered page with SingleFile,
   takes a screenshot of the visible viewport, and saves the page image as its
   banner (or uses the screenshot when no image is available). The toolbar shows
-  **…** while capturing. Keep the tab selected until it closes.
+  **…** during the brief live capture. Keep the tab selected until it closes;
+  slow image/style downloads no longer hold the tab open.
 - **Capture fallback**: if the full snapshot fails, tries rendered text, then
   saves the URL. Partial captures and URL-only saves get the
   **capture-incomplete** tag in Karakeep; hover **Capture needs review** in the
@@ -97,12 +99,14 @@ The browser test requires Firefox (or `FIREFOX_BINARY`) and downloads a pinned
 geckodriver on its first run. It uses generated fixture pages, no personal profile
 or live API credentials. It checks rendered content under a strict CSP,
 cross-origin resources, screenshots, banners, closing and fallback tagging.
+It also deliberately delays resource downloads by three seconds and verifies
+that the tab closes before those downloads finish.
 
 To try the development build, open `about:debugging` → **This Firefox** →
 **Load Temporary Add-on**, then choose this repository's `manifest.json` after
 building. Rebuild and click **Reload** after changing capture code.
 
-### Verify v1.4.0 with Karakeep
+### Verify v1.4.1 with Karakeep
 
 1. Update/install the signed XPI and grant the Page capture permission above.
 2. Open the Tesco product URL, wait until the product is visible, and dismiss
@@ -120,6 +124,12 @@ Existing bookmarks receive a refreshed snapshot and image attachments; notes,
 lists and tags are preserved. History's **Skipped** label means the URL already
 existed, even though its capture was refreshed. Review tags are not removed
 on later saves automatically.
+
+The extension freezes SingleFile's live DOM state (including canvas, form and
+shadow-root data) and stores it with the screenshot in IndexedDB before closing.
+A separate extension document then assembles the snapshot from that saved state;
+it never reopens or reloads the original URL. The assembly document is removed
+after completion or timeout. Each job has its own processor and resource cache.
 
 The extension keeps pending captures in its own IndexedDB until upload succeeds.
 Failed requests retain data for Manual Review → Retry. If Karakeep's crawler is
@@ -147,7 +157,9 @@ background/
                            # step and queues retries on failure.
   history-store.js         # Single source of truth for storage.local;
                            # serializes all writes behind a promise lock.
-  page-capture.js          # Live DOM, screenshot and banner capture.
+  page-capture.js          # Quick live DOM and screenshot capture.
+  capture-assembly.js      # Runs one isolated extension document per archive.
+  capture-processor.js     # SingleFile assembly and banner fetch after closure.
   capture-store.js         # Durable capture bytes, separate from popup state.
   capture-upload.js        # Snapshot/image upload checkpoints and fallback tag.
   karakeep-client.js       # SingleFile + assets + tags, plus POST /api/v1/bookmarks (archive), PATCH
@@ -159,7 +171,7 @@ background/
                            # rehydrated from storage.session on wake.
   cleanup.js               # Alarm-driven history pruning.
 content/
-  page-capture.js          # Source bundled with pinned SingleFile at build time.
+  page-capture.js          # Live-state extraction; bundles only SingleFile helpers.
   list-picker.js           # On-demand shadow-DOM overlay for the
                            # archive-to-list shortcut (numeric hotkeys).
 popup/                     # Toolbar popup UI.

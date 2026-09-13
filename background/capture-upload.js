@@ -1,3 +1,4 @@
+import { assembleCapture } from "./capture-assembly.js";
 import { CAPTURE_TAG } from "../shared/capture.js";
 import { getCapture, putCapture } from "./capture-store.js";
 import { addCaptureReviewTag, archiveBookmark, attachCaptureImage, uploadCaptureImage, uploadPageArchive, waitForImageProcessing } from "./karakeep-client.js";
@@ -12,6 +13,11 @@ export async function archiveWithCapture(item) {
   const checkpoint = async () => {
     if (item.captureId) await putCapture(item.captureId, capture);
   };
+
+  if (capture.snapshot || capture.bannerUrls) {
+    await assembleCapture(capture);
+    await checkpoint();
+  }
 
   if (!capture.result) {
     if (capture.html) {

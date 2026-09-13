@@ -5,3 +5,4 @@ web-ext-artifacts/
 content/page-capture.bundle.js
 licenses/SingleFile-AGPL-3.0.txt
 release-source.zip
+background/capture-processor.bundle.js

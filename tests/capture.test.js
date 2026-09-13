@@ -1,13 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import "fake-indexeddb/auto";
-import { capturePage, handleCaptureResource } from "../background/page-capture.js";
+import { capturePage } from "../background/page-capture.js";
 import { getCapture, putCapture, deleteCapture, pruneCaptureFiles } from "../background/capture-store.js";
 import { attachCaptureImage, waitForImageProcessing } from "../background/karakeep-client.js";
 import { archiveWithCapture } from "../background/capture-upload.js";
 import { createProcessingItem, failProcessingItem, retryManualReviewItem } from "../background/history-store.js";
 import { createBrowserMock } from "./helpers/browser-mock.js";
-import { createDeferred } from "./helpers/module.js";
+import { assembleCapture } from "../background/capture-assembly.js";
 import { imageDataUrlToBlob, readLimitedResponse } from "../shared/capture.js";
 
 const tab = { id: 1, windowId: 1, active: true, url: "https://shop.example/product", title: "Product" };
@@ -23,21 +23,21 @@ function setupCapture(overrides = {}) {
     const [method] = args;
     if (overrides[method]) return [{ result: await overrides[method](...args[1]) }];
     if (method === "prepare") return [{ result: { url: tab.url, title: tab.title, bannerUrls: ["https://cdn.example/product.png"], fallbackHtml: "<p>Product details</p>" } }];
-    if (method === "capture") return [{ result: { url: tab.url, html: "<html>Product details</html>", failedResources: 0 } }];
-    if (method === "banner") return [{ result: image }];
+    if (method === "freeze") return [{ result: { url: tab.url, baseURI: tab.url, content: "<html>Product details</html>", state: { canvases: [] } } }];
     return [{ result: undefined }];
   } };
   return browser;
 }
 
-test("captures HTML, screenshot and banner before closing, without credentials in injected code", async () => {
+test("captures live state and screenshot without downloading any resources", async () => {
   const browser = setupCapture();
+  globalThis.fetch = () => { throw new Error("capture must not fetch"); };
   const result = await capturePage(tab);
-  assert.equal(result.mode, "full");
+  assert.equal(result.mode, "pending");
   assert.deepEqual(result.issues, []);
-  assert.match(await result.html.text(), /Product details/);
+  assert.match(result.snapshot.content, /Product details/);
   assert.equal(result.screenshot.type, "image/png");
-  assert.equal(result.banner.type, "image/png");
+  assert.deepEqual(result.bannerUrls, ["https://cdn.example/product.png"]);
   assert.deepEqual(browser.__mock.removedTabIds, []);
 });
 
@@ -50,24 +50,17 @@ test("injection failure falls back to URL with a review reason", async () => {
   assert.match(result.issues.join(), /permission/);
 });
 
-test("SingleFile failure retains readable text and images", async () => {
-  setupCapture({ capture: () => { throw new Error("SingleFile failed"); } });
+test("live snapshot failure retains readable text and screenshot", async () => {
+  setupCapture({ freeze: () => { throw new Error("Snapshot failed"); } });
   const result = await capturePage(tab);
   assert.equal(result.mode, "text");
   assert.match(await result.html.text(), /Product details/);
-  assert.ok(result.banner && result.screenshot);
+  assert.ok(result.screenshot);
   assert.ok(result.issues.length);
 });
 
-test("partial resource capture is tagged even when HTML exists", async () => {
-  setupCapture({ capture: () => ({ url: tab.url, html: "<p>Product</p>", failedResources: 1 }) });
-  const result = await capturePage(tab);
-  assert.equal(result.mode, "full");
-  assert.match(result.issues.join(), /resources/);
-});
-
 test("oversized snapshots fall back to readable text", async () => {
-  setupCapture({ capture: () => ({ url: tab.url, html: "x".repeat(32 * 1024 * 1024 + 1) }) });
+  setupCapture({ freeze: () => ({ url: tab.url, content: "x".repeat(32 * 1024 * 1024 + 1) }) });
   const result = await capturePage(tab);
   assert.equal(result.mode, "text");
   assert.match(result.issues.join(), /32 MB/);
@@ -87,7 +80,7 @@ test("switching tabs during screenshot drops the screenshot", async () => {
     return image;
   };
   const result = await capturePage(tab);
-  assert.equal(result.mode, "full");
+  assert.equal(result.mode, "pending");
   assert.equal(result.screenshot, null);
   assert.match(result.issues.join(), /Screenshot/);
 });
@@ -99,37 +92,6 @@ test("navigation discards mismatched captured data", async () => {
   assert.equal(result.mode, "url");
   assert.equal(result.html, null);
   assert.equal(result.screenshot, null);
-});
-
-test("pages without a representative image use their screenshot as banner", async () => {
-  setupCapture({ prepare: () => ({ url: tab.url, bannerUrls: [], fallbackHtml: "text" }), banner: () => null });
-  const result = await capturePage(tab);
-  assert.equal(result.banner, result.screenshot);
-  assert.deepEqual(result.issues, []);
-});
-
-test("resource bridge rejects calls outside an active capture", async () => {
-  globalThis.fetch = () => { throw new Error("must not fetch"); };
-  assert.deepEqual(await handleCaptureResource({ captureId: "fake", url: "https://example.com" }, { tab }), { error: "No active capture" });
-});
-
-test("resource bridge binds requests to the captured tab and document", async () => {
-  const pending = createDeferred();
-  let captureId;
-  setupCapture({ capture: async (id) => { captureId = id; return pending.promise; } });
-  const capturing = capturePage(tab);
-  while (!captureId) await new Promise((resolve) => setImmediate(resolve));
-  let calls = 0;
-  globalThis.fetch = async () => { calls++; return new Response("image", { headers: { "content-type": "image/png" } }); };
-  const message = { captureId, url: "https://cdn.example/p.png" };
-  assert.ok((await handleCaptureResource(message, { tab: { id: 2 }, frameId: 0, url: tab.url })).error);
-  assert.ok((await handleCaptureResource(message, { tab, frameId: 0, url: "https://elsewhere.example" })).error);
-  assert.ok((await handleCaptureResource({ ...message, url: "file:///etc/passwd" }, { tab, frameId: 0, url: tab.url })).error);
-  assert.equal(calls, 0);
-  assert.match((await handleCaptureResource(message, { tab, frameId: 0, url: tab.url })).dataUrl, /^data:image\/png/);
-  pending.resolve({ url: tab.url, html: "<p>Page</p>" });
-  await capturing;
-  assert.ok((await handleCaptureResource(message, { tab, frameId: 0, url: tab.url })).error);
 });
 
 test("resource and data URL size/type limits are enforced", async () => {
@@ -301,4 +263,58 @@ test("unavailable worker preserves the captured page and saved bookmark ID for r
   assert.equal(await stored.html.text(), "page");
   assert.equal(uploads, 1);
   await deleteCapture(captureId);
+});
+
+
+test("frozen DOM state survives storage before background processing", async () => {
+  setupCapture();
+  const capture = await capturePage(tab);
+  const id = crypto.randomUUID();
+  await putCapture(id, capture);
+  assert.deepEqual((await getCapture(id)).snapshot, capture.snapshot);
+  await deleteCapture(id);
+});
+
+function setupAssembly(assemble) {
+  let removed = false;
+  const frame = { contentWindow: { assemble }, remove() { removed = true; } };
+  globalThis.document = { createElement: () => frame, body: { append: () => queueMicrotask(() => frame.onload()) } };
+  globalThis.browser = { runtime: { getURL: (path) => `moz-extension://test/${path}` } };
+  return () => removed;
+}
+
+test("background assembly replaces frozen state with uploadable HTML and images", async () => {
+  const wasRemoved = setupAssembly(async () => ({ html: "<p>Archived content</p>", mode: "full", banner: image, issues: ["Some page resources could not be captured"] }));
+  const capture = { snapshot: { content: "page" }, fallbackHtml: "text", bannerUrls: [], issues: [] };
+  await assembleCapture(capture);
+  assert.equal(capture.mode, "full");
+  assert.equal(await capture.html.text(), "<p>Archived content</p>");
+  assert.ok(capture.banner);
+  assert.match(capture.issues.join(), /resources/);
+  assert.equal(capture.snapshot, undefined);
+  assert.ok(wasRemoved());
+});
+
+test("failed background assembly retains text and screenshot, and tears down the processor", async () => {
+  const wasRemoved = setupAssembly(async () => { throw new Error("Processor failed"); });
+  const screenshot = imageDataUrlToBlob(image);
+  const capture = { snapshot: { content: "page" }, fallbackHtml: "Readable text", screenshot, issues: [] };
+  await assembleCapture(capture);
+  assert.equal(capture.mode, "text");
+  assert.equal(await capture.html.text(), "Readable text");
+  assert.equal(capture.banner, screenshot);
+  assert.match(capture.issues.join(), /Processor failed/);
+  assert.ok(wasRemoved());
+});
+
+test("deferred queue persists a frozen capture without starting resource downloads or upload", async () => {
+  setupUpload();
+  globalThis.fetch = () => { throw new Error("Work started before tab closure"); };
+  const { enqueueArchiveFromSnapshot } = await import("../background/archive-queue.js");
+  const snapshot = { url: tab.url, content: "<p>Frozen page</p>", state: {} };
+  const item = await enqueueArchiveFromSnapshot(tab, {}, { mode: "pending", snapshot, issues: [] }, { deferProcessing: true });
+  assert.deepEqual((await getCapture(item.captureId)).snapshot, snapshot);
+  const state = await browser.storage.local.get("processingItems");
+  assert.equal(state.processingItems[0].captureId, item.captureId);
+  await deleteCapture(item.captureId);
 });

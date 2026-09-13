@@ -15,6 +15,9 @@ const uuid = "cf1e9537-53c1-4667-9648-139510c5b893";
 const calls = [];
 let report;
 const reported = new Promise((resolve) => { report = resolve; });
+let resourceDelay = 0;
+let delayedRequests = 0;
+const pageRequests = new Map();
 let bookmarkNumber = 0;
 const bookmarks = new Map();
 function createBookmark() {
@@ -27,6 +30,8 @@ const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="500" height="300"><r
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://localhost");
+    if (url.pathname === "/arm-delay") { resourceDelay = 3000; res.end("ok"); return; }
+    if (url.pathname === "/disarm-delay") { resourceDelay = 0; res.end("ok"); return; }
     if (url.pathname === "/test-result") {
       let body = ""; for await (const chunk of req) body += chunk;
       report(JSON.parse(body)); res.end("ok"); return;
@@ -79,12 +84,17 @@ const server = createServer(async (req, res) => {
     }
     // No Karakeep API key may leak to the captured site's resource requests.
     assert.equal(req.headers.authorization, undefined);
+    res.setHeader("Cache-Control", "no-store");
+    if (resourceDelay && ["/banner.svg", "/style.css"].includes(url.pathname)) {
+      delayedRequests++; await new Promise((resolve) => setTimeout(resolve, resourceDelay));
+    }
     if (url.pathname === "/banner.svg") { res.setHeader("Content-Type", "image/svg+xml"); res.end(svg); return; }
     if (url.pathname === "/style.css") { res.setHeader("Content-Type", "text/css"); res.end("body{font:20px sans-serif;background:#f1f5f9;color:#102030;padding:30px}article{max-width:700px}img{width:500px}"); return; }
-    if (url.pathname === "/hydrate.js") { res.setHeader("Content-Type", "text/javascript"); res.end('document.querySelector("#details").textContent="Hydrated product details, captured from the live page."'); return; }
+    if (url.pathname === "/hydrate.js") { res.setHeader("Content-Type", "text/javascript"); res.end('document.querySelector("#details").textContent="Hydrated product details, captured from the live page.";document.querySelector("#live-value").value="Edited form value";document.querySelector("#shadow").attachShadow({mode:"open"}).textContent="Live shadow details";const ctx=document.querySelector("canvas").getContext("2d");ctx.fillStyle="green";ctx.fillRect(0,0,30,30);'); return; }
+    pageRequests.set(url.pathname, (pageRequests.get(url.pathname) || 0) + 1);
     res.setHeader("Content-Type", "text/html");
     res.setHeader("Content-Security-Policy", "default-src 'self'; img-src * data:; style-src *; script-src 'self'");
-    res.end(`<!doctype html><html><head><title>Capture proof</title><meta property="og:image" content="http://localhost:${server.address().port}/banner.svg"><meta name="description" content="Product capture test"><link rel="stylesheet" href="http://localhost:${server.address().port}/style.css"></head><body><article><h1>Capture proof</h1><img src="http://localhost:${server.address().port}/banner.svg"><p id="details">Loading product…</p><p>${"These product details should be preserved in the archive. ".repeat(15)}</p></article><script src="/hydrate.js"></script></body></html>`);
+    res.end(`<!doctype html><html><head><title>Capture proof</title><meta property="og:image" content="http://localhost:${server.address().port}/banner.svg"><meta name="description" content="Product capture test"><link rel="stylesheet" href="http://localhost:${server.address().port}/style.css"></head><body><article><h1>Capture proof</h1><p>Fixture ${url.pathname}</p><img src="http://localhost:${server.address().port}/banner.svg"><p id="details">Loading product…</p><input id="live-value" value="Initial value"><div id="shadow"></div><canvas width="30" height="30"></canvas><p>${"These product details should be preserved in the archive. ".repeat(15)}</p></article><script src="/hydrate.js"></script></body></html>`);
   } catch (error) { console.error(error); res.writeHead(500); res.end(String(error)); }
 });
 
@@ -116,9 +126,18 @@ try {
   if (result.error) throw new Error(result.error);
   const { saved, fallback } = result;
   assert.equal(saved.captureMode, "full");
+  assert.ok(delayedRequests > 0, "the test must actually delay captured resources");
+  assert.ok(saved.closeMs < 2000, `Tab took ${saved.closeMs}ms to close despite offloaded resources`);
+  console.log(`PASS: tab closed in ${Math.round(saved.closeMs)}ms while resource downloads each waited 3000ms`);
   assert.deepEqual(saved.captureIssues || [], []);
   const archive = calls.find((call) => call.path.endsWith("singlefile"));
   assert.match(archive.html, /Hydrated product details/);
+  assert.match(archive.html, /Edited form value/);
+  assert.match(archive.html, /Live shadow details/);
+  assert.match(archive.html, /data:image\/png/);
+  assert.equal(pageRequests.get("/product"), 1, "assembly must not reload the original page");
+  assert.match(archive.html, /Fixture \/product/);
+  assert.match(calls.find((call) => call.url?.endsWith("/rejected"))?.html, /Fixture \/rejected/);
   assert.match(archive.html, /data:image\/svg\+xml/);
   assert.doesNotMatch(archive.html, /karakeep-quick-archive-list-picker-host/);
   assert.deepEqual(calls.filter((call) => call.path.includes("/bm-1/") && call.imageType).map((call) => call.imageType), ["screenshot", "bannerImage"]);
@@ -145,9 +164,21 @@ async function browserHarness(base) {
   try {
     await pause(500);
     await browser.storage.local.set({ settings: { karakeepBaseUrl: base, karakeepApiKey: "smoke-key" }, processingItems: [], manualReviewItems: [], historyItems: [] });
+    let firstClosed;
+    const firstTabClosed = new Promise((resolve) => { firstClosed = resolve; });
     async function savePage(path) {
       const tab = await browser.tabs.create({ url: `${base}/${path}`, active: true });
-      await pause(1000);
+      const readyDeadline = Date.now() + 10_000;
+      while ((await browser.tabs.get(tab.id)).status !== "complete") {
+        if (Date.now() > readyDeadline) throw new Error("Fixture did not load");
+        await pause(50);
+      }
+      await pause(100);
+      if (path === "product") await fetch(`${base}/arm-delay`);
+      let closeMs;
+      const started = performance.now();
+      const onRemoved = (id) => { if (id === tab.id) { closeMs = performance.now() - started; if (path === "product") firstClosed(); } };
+      browser.tabs.onRemoved.addListener(onRemoved);
       await browser.scripting.executeScript({ target: { tabId: tab.id }, func: () => {
         void browser.runtime.sendMessage({ type: "archiveCurrentTabToList", favourite: true });
       } });
@@ -158,14 +189,18 @@ async function browserHarness(base) {
         const item = state.historyItems?.find((item) => item.url === `${base}/${path}` && item.captureMode);
         if (item) {
           if ((await browser.tabs.query({})).some((t) => t.id === tab.id)) throw new Error("Archived tab did not close");
-          return item;
+          browser.tabs.onRemoved.removeListener(onRemoved);
+          await fetch(`${base}/disarm-delay`);
+          return { ...item, closeMs };
         }
         await pause(250);
       }
       throw new Error("Capture did not complete: " + JSON.stringify(await browser.storage.local.get()));
     }
-    const saved = await savePage("product");
-    const fallback = await savePage("rejected");
+    const saving = savePage("product");
+    // Capture another page while the first archive is still downloading.
+    await Promise.race([firstTabClosed, saving]);
+    const [saved, fallback] = await Promise.all([saving, savePage("rejected")]);
     await fetch(`${base}/test-result`, { method: "POST", body: JSON.stringify({ saved, fallback }) });
   } catch (error) {
     await fetch(`${base}/test-result`, { method: "POST", body: JSON.stringify({ error: String(error) + "\n" + error.stack }) });

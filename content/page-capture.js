@@ -1,55 +1,15 @@
-// Bundled locally with SingleFile; runs only in Firefox's isolated content world.
-import { getPageData } from "single-file-core/single-file.js";
-import { blobToDataUrl, readLimitedResponse, MAX_CAPTURE_BYTES, RESOURCE_TIMEOUT_MS } from "../shared/capture.js";
+// Only reads live DOM state here. No resource downloads or archive assembly.
+import * as helper from "single-file-core/core/helper.js";
+import { captureOptions } from "../shared/capture-options.js";
 
 if (!globalThis.__karakeepCapture) {
   let session;
-
-  async function resourceFetch(url, current = session) {
-    if (!current || current !== session) throw new Error("Capture session ended");
-    const key = String(url);
-    if (current.cache.has(key)) return responseFromBlob(await current.cache.get(key), key);
-    const pending = (async () => {
-      if (current.bytes >= MAX_CAPTURE_BYTES) throw new Error("Capture resource budget exceeded");
-      try {
-        const response = await fetch(key, {
-          credentials: "include", cache: "force-cache",
-          signal: AbortSignal.timeout(RESOURCE_TIMEOUT_MS)
-        });
-        return await readLimitedResponse(response);
-      } catch {
-        const result = await browser.runtime.sendMessage({
-          type: "captureResource", captureId: current.id, url: key
-        });
-        if (!result?.dataUrl) throw new Error("Resource unavailable");
-        // Decoding with fetch(data:) is blocked by some pages' CSP in MV3.
-        const comma = result.dataUrl.indexOf(",");
-        const bytes = Uint8Array.from(atob(result.dataUrl.slice(comma + 1)), (char) => char.charCodeAt(0));
-        return new Blob([bytes], { type: result.dataUrl.slice(5, comma).split(";")[0] });
-      }
-    })().then((blob) => {
-      current.bytes += blob.size;
-      if (current.bytes > MAX_CAPTURE_BYTES) throw new Error("Capture resource budget exceeded");
-      return blob;
-    });
-    current.cache.set(key, pending);
-    try {
-      return responseFromBlob(await pending, key);
-    } catch (error) {
-      current.failedResources++;
-      throw error;
-    }
-  }
-
-  function responseFromBlob(blob, url) {
-    return { status: 200, url, headers: new Headers({ "content-type": blob.type }), arrayBuffer: () => blob.arrayBuffer(), blob: () => blob };
-  }
 
   function prepare(id) {
     if (session) throw new Error("A capture is already running");
     // Our own overlay must never appear in screenshots or archived HTML.
     document.getElementById("karakeep-quick-archive-list-picker-host")?.remove();
-    session = { id, cache: new Map(), failedResources: 0, bytes: 0 };
+    session = { id };
     const url = location.href;
     const title = document.title || url;
     const description = document.querySelector('meta[name="description"], meta[property="og:description"]')?.content || "";
@@ -70,41 +30,25 @@ if (!globalThis.__karakeepCapture) {
     return { url, title, bannerUrls, fallbackHtml, challenge };
   }
 
-  async function capture(id) {
+  function freeze(id) {
     if (session?.id !== id) throw new Error("Invalid capture session");
-    const current = session;
-    const page = await getPageData({
-      removeHiddenElements: true, removeUnusedStyles: true, removeUnusedFonts: true,
-      compressHTML: true, blockScripts: true, blockVideos: true, blockAudios: true,
-      removeFrames: true, removeAlternativeFonts: true, removeAlternativeMedias: true,
-      removeAlternativeImages: true, groupDuplicateImages: true,
-      maxResourceSizeEnabled: true, maxResourceSize: 8, networkTimeout: RESOURCE_TIMEOUT_MS,
-      loadDeferredImages: false, saveOriginalURLs: true
-    }, { fetch: (url) => resourceFetch(url, current) }, document, window);
-    return { url: location.href, html: page.content, failedResources: current.failedResources };
-  }
-
-  async function banner(id, urls) {
-    if (session?.id !== id) throw new Error("Invalid capture session");
-    const current = session;
-    let lastError;
-    for (const url of urls) {
-      try {
-        const response = await resourceFetch(url, current);
-        const blob = response.blob();
-        if (blob.type.startsWith("image/")) return await blobToDataUrl(blob);
-        lastError = new Error(`Unsupported banner content type: ${blob.type}`);
-      } catch (error) { lastError = error; }
+    let data;
+    try {
+      data = helper.preProcessDoc(document, window, captureOptions);
+      const content = helper.serialize(document);
+      // DOM nodes are needed only to restore the live page, never for assembly.
+      const { markedElements, invalidElements, ...state } = data;
+      return { url: location.href, baseURI: document.baseURI, content, state };
+    } finally {
+      if (data) helper.postProcessDoc(document, data.markedElements, data.invalidElements);
     }
-    if (lastError) throw lastError;
-    return null;
   }
 
   function escape(value) {
     return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
   }
 
-  globalThis.__karakeepCapture = { prepare, capture, banner, end: (id) => {
+  globalThis.__karakeepCapture = { prepare, freeze, end: (id) => {
     if (session?.id === id) session = null;
   } };
 }

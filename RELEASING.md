@@ -120,7 +120,8 @@ channel anyway.
 
 ## Bundled capture source
 
-The generated `content/page-capture.bundle.js` and SingleFile license copy are
+The generated `content/page-capture.bundle.js`,
+`background/capture-processor.bundle.js`, and SingleFile license copy are
 built with `npm run build`, not checked in. AMO receives `release-source.zip`
 from the tagged commit so reviewers can reproduce them with Node.js 24 and
 `npm ci && npm run build`. The XPI includes an unminified bundle, upstream
