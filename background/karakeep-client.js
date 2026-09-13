@@ -19,7 +19,8 @@ export async function archiveBookmark(item) {
       headers: buildHeaders(settings.karakeepApiKey),
       body: JSON.stringify({
         type: "link",
-        url: item.url
+        url: item.url,
+        ...(item.title ? { title: item.title } : {})
       })
     },
     settings.requestTimeoutSeconds
@@ -34,6 +35,72 @@ export async function archiveBookmark(item) {
   }
 
   throw mapKarakeepError(response.status);
+}
+
+export async function uploadPageArchive(url, html) {
+  const body = new FormData();
+  body.append("url", url);
+  body.append("file", html, "page.html");
+  const { response, payload } = await captureRequest(
+    "/api/v1/bookmarks/singlefile?ifexists=overwrite-recrawl", "POST", body
+  );
+  if (typeof payload?.id !== "string") throw new Error("Archive upload returned no bookmark ID");
+  return { status: response.status === 201 ? "archived" : "skipped", bookmarkId: payload.id };
+}
+
+export async function uploadCaptureImage(blob, name) {
+  const body = new FormData();
+  body.append("file", blob, name);
+  const { payload } = await captureRequest("/api/v1/assets", "POST", body);
+  if (typeof payload?.assetId !== "string") throw new Error("Image upload returned no asset ID");
+  return payload.assetId;
+}
+
+export async function attachCaptureImage(bookmarkId, assetId, assetType) {
+  const path = `/api/v1/bookmarks/${encodeURIComponent(bookmarkId)}`;
+  const { payload } = await captureRequest(path, "GET");
+  const matching = (payload.assets || []).filter((asset) => asset.assetType === assetType);
+  if (matching.some((asset) => asset.id === assetId)) return; // Retried after an uncertain response.
+  const previous = matching.at(-1);
+  if (previous) {
+    await captureRequest(`${path}/assets/${encodeURIComponent(previous.id)}`, "PUT", { assetId });
+  } else {
+    await captureRequest(`${path}/assets`, "POST", { id: assetId, assetType });
+  }
+}
+
+export async function waitForImageProcessing(bookmarkId, { timeoutMs = 60_000, pollMs = 2000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    const { payload } = await captureRequest(`/api/v1/bookmarks/${encodeURIComponent(bookmarkId)}`, "GET");
+    if (payload.content?.crawlStatus !== "pending") return payload.content?.crawlStatus;
+    // The crawler writes its own image assets. Finish ours after that write so
+    // an error-page image cannot replace the browser capture. Retain the local
+    // payload for Retry if the worker is unavailable or its queue is backed up.
+    if (Date.now() >= deadline) throw new Error("Karakeep is still processing the page; retry to finish uploading images");
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+}
+
+export async function addCaptureReviewTag(bookmarkId, tag) {
+  await captureRequest(`/api/v1/bookmarks/${encodeURIComponent(bookmarkId)}/tags`, "POST", { tags: [{ tagName: tag }] });
+}
+
+async function captureRequest(path, method, body) {
+  const settings = await getSettings();
+  validateReadySettings(settings);
+  await assertHostPermission(settings.karakeepBaseUrl);
+  const multipart = body instanceof FormData;
+  const headers = buildHeaders(settings.karakeepApiKey);
+  if (multipart) delete headers["Content-Type"];
+  const response = await fetchWithTimeout(`${settings.karakeepBaseUrl}${path}`, {
+    method, headers, body: multipart ? body : JSON.stringify(body)
+  }, Math.max(settings.requestTimeoutSeconds, 90));
+  if (![200, 201, 204].includes(response.status)) {
+    throw new Error(`Capture request failed (HTTP ${response.status})`);
+  }
+  const payload = response.status === 204 ? null : await ensureJsonObject(response);
+  return { response, payload };
 }
 
 export async function setBookmarkFavourite(bookmarkId, favourited) {

@@ -9,7 +9,15 @@ closes the tab. Designed to make "archive this tab" feel as cheap as
 
 - **One-shortcut archive**: press `Ctrl+Cmd+W` (macOS) or `Ctrl+Alt+W`
   (Windows/Linux) to send the current tab to Karakeep and close it
-  immediately — no waiting on the network.
+  after a local page capture. Uploads continue in the background.
+- **Capture what Firefox can see**: bundles the rendered page with SingleFile,
+  takes a screenshot of the visible viewport, and saves the page image as its
+  banner (or uses the screenshot when no image is available). The toolbar shows
+  **…** while capturing. Keep the tab selected until it closes.
+- **Capture fallback**: if the full snapshot fails, tries rendered text, then
+  saves the URL. Partial captures and URL-only saves get the
+  **capture-incomplete** tag in Karakeep; hover **Capture needs review** in the
+  popup for the reason. Saving an already closed history entry is URL-only.
 - **Archive into a list**: press `Ctrl+Cmd+E` (macOS) or `Ctrl+Alt+E`
   (Windows/Linux) to open a list picker over the current page (the page
   dims behind it). Pick **Favourites** or any manual Karakeep list by
@@ -51,11 +59,17 @@ https://github.com/Zeromusta/karakeep-quick-archive-firefox/releases
    access your Karakeep host the first time — grant it. A successful
    ping reports "Connection succeeded."
 4. Click **Save settings**.
+5. Under **Page capture**, click **Allow complete page capture** and grant
+   access. This lets the extension fetch images and styles from other hosts.
+   Firefox may also ask you to accept the new content permissions when updating.
+   Capture happens only when you choose Archive; page content goes to your
+   configured Karakeep server. Logged-in page content can be included.
 
 Other settings:
 
 - **Request timeout (seconds)** — how long to wait on a Karakeep request
-  before giving up. Default 15.
+  before giving up. Default 15; snapshot/image requests allow at least 90
+  seconds because their payloads are larger.
 - **History retention (hours)** — how long resolved entries (Closed /
   Archived / Skipped) stay in the popup before being pruned. Default 50.
 - **Max history items to render** — caps how many entries the popup
@@ -69,17 +83,55 @@ Other settings:
 
 ## Develop
 
+Use Node.js 24 or later:
+
 ```bash
-npm test       # run the Node-based test suite (no install required)
+npm ci
+npm run build        # bundle pinned SingleFile and copy its license
+npm test             # unit/integration tests, including IndexedDB retries
+npm run lint         # Firefox self-hosted extension validator
+npm run test:browser # isolated Firefox profile and local mock Karakeep
 ```
 
-Tests use Node's built-in `node:test` runner and live under `tests/`.
-A `tests/helpers/browser-mock.js` stub provides the `browser.*` APIs
-that the background and shared modules expect. No browser is launched.
+The browser test requires Firefox (or `FIREFOX_BINARY`) and downloads a pinned
+geckodriver on its first run. It uses generated fixture pages, no personal profile
+or live API credentials. It checks rendered content under a strict CSP,
+cross-origin resources, screenshots, banners, closing and fallback tagging.
 
-Manual testing in a real Firefox happens via the temporary-load flow
-above. Re-clicking **Reload** in `about:debugging` picks up file
-changes without restarting Firefox.
+To try the development build, open `about:debugging` → **This Firefox** →
+**Load Temporary Add-on**, then choose this repository's `manifest.json` after
+building. Rebuild and click **Reload** after changing capture code.
+
+### Verify v1.4.0 with Karakeep
+
+1. Update/install the signed XPI and grant the Page capture permission above.
+2. Open the Tesco product URL, wait until the product is visible, and dismiss
+   any cookie dialog you do not want in the screenshot.
+3. Use the usual archive shortcut (or archive-to-list). Leave the tab selected
+   while the **…** badge appears; it closes once the local copy is persisted.
+4. Wait for Processing to finish, then use **Open in Karakeep** in history.
+   Check Reader view contains product details, the Precrawled Archive opens,
+   Screenshot shows the product, and the bookmark has a banner.
+5. Try a normal article and an archive-to-list/favourite save too. If a capture
+   needs review, inspect its popup reason and the **capture-incomplete** tag.
+
+Karakeep 0.33.2's SingleFile and asset APIs are the compatibility baseline.
+Existing bookmarks receive a refreshed snapshot and image attachments; notes,
+lists and tags are preserved. History's **Skipped** label means the URL already
+existed, even though its capture was refreshed. Review tags are not removed
+on later saves automatically.
+
+The extension keeps pending captures in its own IndexedDB until upload succeeds.
+Failed requests retain data for Manual Review → Retry. If Karakeep's crawler is
+still busy after a minute, retry finishes the image upload without recapturing
+the page. Successful uploads release the local copy; unused failed captures are
+pruned after dismissal (with a one-hour grace period).
+
+Server snapshots are retained. Karakeep extracts reader content separately, so a
+future cleanup can remove only the `precrawledArchive` attachment through its
+asset API after verifying extraction succeeded. No server pruning is enabled
+here. Reader extraction and AI tagging/summarization remain controlled by your
+Karakeep settings; this extension does not enable automatic summaries.
 
 ## Architecture
 
@@ -95,7 +147,10 @@ background/
                            # step and queues retries on failure.
   history-store.js         # Single source of truth for storage.local;
                            # serializes all writes behind a promise lock.
-  karakeep-client.js       # POST /api/v1/bookmarks (archive), PATCH
+  page-capture.js          # Live DOM, screenshot and banner capture.
+  capture-store.js         # Durable capture bytes, separate from popup state.
+  capture-upload.js        # Snapshot/image upload checkpoints and fallback tag.
+  karakeep-client.js       # SingleFile + assets + tags, plus POST /api/v1/bookmarks (archive), PATCH
                            # /api/v1/bookmarks/{id} (favourite), GET
                            # /api/v1/lists, and list membership PUT/DELETE.
   list-service.js          # Fetch lists + membership; add/remove a
@@ -104,6 +159,7 @@ background/
                            # rehydrated from storage.session on wake.
   cleanup.js               # Alarm-driven history pruning.
 content/
+  page-capture.js          # Source bundled with pinned SingleFile at build time.
   list-picker.js           # On-demand shadow-DOM overlay for the
                            # archive-to-list shortcut (numeric hotkeys).
 popup/                     # Toolbar popup UI.
@@ -120,6 +176,10 @@ that publishes signed `.xpi`s plus an auto-update feed are documented
 in [RELEASING.md](RELEASING.md).
 
 ## Credits
+
+- [SingleFile Core](https://github.com/gildas-lormeau/single-file-core) by
+  Gildas Lormeau, AGPL-3.0-or-later. See [THIRD_PARTY.txt](THIRD_PARTY.txt) for
+  distribution licensing and corresponding source.
 
 - Star, list, and check icons from [Font Awesome Free 6](https://fontawesome.com/),
   licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).

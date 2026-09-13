@@ -1,27 +1,43 @@
 {
   "manifest_version": 3,
   "name": "Karakeep Quick Archive",
-  "version": "1.3.4",
-  "description": "Archive the current tab to Karakeep and close it immediately, with compact processing, manual review, and history views.",
+  "version": "1.4.0",
+  "description": "Capture the current page, screenshot and banner in Karakeep, then close the tab. Queue uploads and flag incomplete captures for review.",
   "browser_specific_settings": {
     "gecko": {
       "id": "karakeep-quick-archive@zeromusta.com",
       "strict_min_version": "142.0",
       "update_url": "https://zeromusta.github.io/karakeep-quick-archive-firefox/updates.json",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": [
+          "websiteContent",
+          "browsingActivity"
+        ]
       }
     }
   },
-  "permissions": ["tabs", "storage", "alarms", "notifications", "scripting", "activeTab"],
-  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "permissions": [
+    "tabs",
+    "storage",
+    "alarms",
+    "notifications",
+    "scripting",
+    "activeTab",
+    "unlimitedStorage"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
   "icons": {
     "48": "icons/icon-light-48.png",
     "96": "icons/icon-light-96.png",
     "128": "icons/icon-light-128.png"
   },
   "background": {
-    "scripts": ["background/controller.js"],
+    "scripts": [
+      "background/controller.js"
+    ],
     "type": "module"
   },
   "action": {

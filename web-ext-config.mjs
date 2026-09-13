@@ -1,6 +1,10 @@
 export default {
   ignoreFiles: [
     "tests/**",
+    "scripts/**",
+    "node_modules/**",
+    "content/page-capture.js",
+    "release-source.zip",
     ".github/**",
     ".claude/**",
     "*.md",

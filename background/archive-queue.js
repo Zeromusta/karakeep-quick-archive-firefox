@@ -1,4 +1,6 @@
 import { logDebug } from "../shared/utils.js";
+import { putCapture, deleteCapture } from "./capture-store.js";
+import { archiveWithCapture } from "./capture-upload.js";
 import {
   applyBookmarkFavouriteToHistory,
   archiveClosedHistoryItem,
@@ -14,14 +16,22 @@ import {
 } from "./history-store.js";
 import {
   addBookmarkToList,
-  archiveBookmark,
   setBookmarkFavourite
 } from "./karakeep-client.js";
 
 const activeJobs = new Map();
 
-export async function enqueueArchiveFromSnapshot(snapshot, extras = {}) {
-  const item = await createProcessingItem(snapshot, extras);
+export async function enqueueArchiveFromSnapshot(snapshot, extras = {}, capture = null) {
+  let captureId;
+  if (capture) {
+    captureId = crypto.randomUUID();
+    try { await putCapture(captureId, capture); }
+    catch {
+      captureId = null;
+      extras = { ...extras, captureIssues: ["Could not store local capture; saved URL only"] };
+    }
+  }
+  const item = await createProcessingItem(snapshot, { ...extras, captureId });
   startProcessingJob(item);
   return item;
 }
@@ -62,11 +72,12 @@ function startProcessingJob(item) {
 
   const job = (async () => {
     try {
-      const result = await archiveBookmark(item);
-      await completeProcessingItem(item.id, result.status, result.bookmarkId);
+      const result = await archiveWithCapture(item);
+      await completeProcessingItem(item.id, result.status, result.bookmarkId, result);
       // The archive itself is done; the optional list/favourite step runs after
       // and never fails the archive — it spawns its own manual-review entry.
       await applyPostArchiveAction(item, result.bookmarkId);
+      if (item.captureId) await deleteCapture(item.captureId).catch(() => {});
     } catch (error) {
       const settings = await getSettings();
       logDebug(

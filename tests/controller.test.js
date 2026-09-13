@@ -483,6 +483,7 @@ test("archiveCurrentTabToList archives the sender tab, files it into the list, a
     if (url.endsWith("/api/v1/bookmarks") && options.method === "POST") {
       return { status: 201, async json() { return { id: "bm-1" }; } };
     }
+    if (url.endsWith("/tags")) return { status: 200, async json() { return {}; } };
     if (url.includes("/api/v1/lists/") && options.method === "PUT") {
       return { status: 204, async json() { throw new Error("204 has no body"); } };
     }
@@ -534,6 +535,7 @@ test("archiveCurrentTabToList records a list-add manual review entry when filing
     if (url.endsWith("/api/v1/bookmarks") && options.method === "POST") {
       return { status: 201, async json() { return { id: "bm-2" }; } };
     }
+    if (url.endsWith("/tags")) return { status: 200, async json() { return {}; } };
     if (url.includes("/api/v1/lists/") && options.method === "PUT") {
       return { status: 500, async json() { return {}; } };
     }
@@ -591,6 +593,7 @@ test("retryManualReview re-files a failed list-add and clears the entry", async 
   }));
   let putCalled = false;
   globalThis.fetch = async (url, options) => {
+    if (url.endsWith("/tags")) return { status: 200, async json() { return {}; } };
     if (url.includes("/api/v1/lists/") && options.method === "PUT") {
       putCalled = true;
       return { status: 204, async json() { throw new Error("204 has no body"); } };

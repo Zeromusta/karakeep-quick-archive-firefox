@@ -2,3 +2,6 @@ node_modules/
 web-ext-artifacts/
 .DS_Store
 *.log
+content/page-capture.bundle.js
+licenses/SingleFile-AGPL-3.0.txt
+release-source.zip

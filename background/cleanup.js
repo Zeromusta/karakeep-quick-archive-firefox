@@ -3,6 +3,7 @@ import {
   CLEANUP_PERIOD_MINUTES
 } from "../shared/constants.js";
 import { pruneHistory } from "./history-store.js";
+import { pruneCaptureFiles } from "./capture-store.js";
 
 export async function initializeCleanup() {
   await browser.alarms.create(ALARM_NAMES.pruneHistory, {
@@ -14,6 +15,7 @@ export function registerCleanupHandler() {
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === ALARM_NAMES.pruneHistory) {
       void pruneHistory();
+      void pruneCaptureFiles().catch(() => {});
     }
   });
 }

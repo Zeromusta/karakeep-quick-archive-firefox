@@ -39,6 +39,7 @@ import {
   testConnection
 } from "./karakeep-client.js";
 import { fetchListsWithMembership, setMembership } from "./list-service.js";
+import { capturePage, handleCaptureResource } from "./page-capture.js";
 import {
   forgetTab,
   getSnapshot,
@@ -47,6 +48,7 @@ import {
 } from "./tab-snapshot-cache.js";
 
 const archiveInitiatedCloses = new Set();
+const capturingTabs = new Set();
 let initializePromise = null;
 let isInitialized = false;
 
@@ -108,6 +110,7 @@ function registerListeners() {
   });
 
   browser.runtime.onMessage.addListener(async (message, sender) => {
+    if (message?.type === "captureResource") return handleCaptureResource(message, sender);
     await initializeExtension();
 
     switch (message?.type) {
@@ -191,23 +194,7 @@ async function archiveActiveTab() {
     return;
   }
 
-  const item = await enqueueArchiveFromSnapshot(snapshot);
-  archiveInitiatedCloses.add(activeTab.id);
-
-  // The item is now persisted ("captured"), so confirm to the user before the
-  // tab closes — regardless of whether the archive later succeeds or fails.
-  // Fire-and-forget so the close stays instant.
-  void showArchiveCaptureFeedback(snapshot);
-
-  try {
-    await browser.tabs.remove(activeTab.id);
-  } catch (error) {
-    const settings = await getSettings();
-    logDebug(settings.debugLogging, "Failed to close archived tab", activeTab.id, error);
-    archiveInitiatedCloses.delete(activeTab.id);
-  }
-
-  await waitForProcessing(item.id);
+  await captureArchiveAndClose(activeTab, snapshot);
 }
 
 // Keyboard-shortcut entry point: inject the list-picker overlay into the active
@@ -262,21 +249,33 @@ async function handleArchiveCurrentTabToList(message, sender) {
     ? { favourite: true }
     : { listId: message.listId, listName: message.listName };
 
-  const item = await enqueueArchiveFromSnapshot(snapshot, extras);
-  archiveInitiatedCloses.add(tab.id);
-
-  void showArchiveCaptureFeedback(snapshot);
-
-  try {
-    await browser.tabs.remove(tab.id);
-  } catch (error) {
-    const settings = await getSettings();
-    logDebug(settings.debugLogging, "Failed to close archived tab", tab.id, error);
-    archiveInitiatedCloses.delete(tab.id);
-  }
-
-  await waitForProcessing(item.id);
+  await captureArchiveAndClose(tab, snapshot, extras);
   return { ok: true };
+}
+
+async function captureArchiveAndClose(tab, snapshot, extras = {}) {
+  if (capturingTabs.has(tab.id)) return;
+  capturingTabs.add(tab.id);
+  try {
+    await browser.action?.setBadgeText({ tabId: tab.id, text: "…" }).catch(() => {});
+    await browser.action?.setTitle({ tabId: tab.id, title: "Capturing page…" }).catch(() => {});
+    const capture = await capturePage(tab);
+    const item = await enqueueArchiveFromSnapshot(snapshot, extras, capture);
+    // Do not close a different page if the user navigated while capturing.
+    try {
+      const current = await browser.tabs.get(tab.id);
+      if (current.url === snapshot.url) {
+        archiveInitiatedCloses.add(tab.id);
+        await browser.tabs.remove(tab.id);
+      }
+    } catch { archiveInitiatedCloses.delete(tab.id); }
+    void showArchiveCaptureFeedback(snapshot);
+    await waitForProcessing(item.id);
+  } finally {
+    capturingTabs.delete(tab.id);
+    await browser.action?.setBadgeText({ tabId: tab.id, text: "" }).catch(() => {});
+    await browser.action?.setTitle({ tabId: tab.id, title: "Karakeep Quick Archive" }).catch(() => {});
+  }
 }
 
 async function showArchiveCaptureFeedback(snapshot) {

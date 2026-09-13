@@ -30,6 +30,22 @@ const saveStatus = document.querySelector("#save-status");
 await loadSettings();
 watchThemeChanges();
 
+const capturePermissionButton = document.querySelector("#capture-permission-button");
+const capturePermissionStatus = document.querySelector("#capture-permission-status");
+const captureOrigins = ["http://*/*", "https://*/*"];
+async function refreshCapturePermission() {
+  const granted = await browser.permissions.contains({ origins: captureOrigins });
+  capturePermissionStatus.textContent = granted ? "Complete page access allowed." : "Some images or styles may be unavailable.";
+  capturePermissionButton.disabled = granted;
+}
+capturePermissionButton.addEventListener("click", async () => {
+  try {
+    await browser.permissions.request({ origins: captureOrigins });
+    await refreshCapturePermission();
+  } catch (error) { capturePermissionStatus.textContent = error.message; }
+});
+await refreshCapturePermission();
+
 iconThemeInput.addEventListener("change", async () => {
   await persistSettingChange("iconTheme", iconThemeInput.value);
 });

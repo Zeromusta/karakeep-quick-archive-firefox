@@ -468,6 +468,7 @@ function renderHistory(items, showFavicons) {
                 <span>${formatTimestamp(item.actionAt)}</span>
                 ${renderListButton(item)}
                 ${renderFavouriteButton(item)}
+                ${item.captureMode ? `<span data-tooltip="${escapeAttribute((item.captureIssues || []).join('; ') || 'Page snapshot and images uploaded')}">${item.captureIssues?.length ? 'Capture needs review' : 'Page copy saved'}</span>` : ''}
               </div>
               ${renderListPanelContainer(item)}
             </div>

@@ -69,6 +69,8 @@ export async function createProcessingItem(snapshot, extras = {}) {
     sourceWindowId: snapshot.windowId,
     state: ITEM_STATES.processing,
     attemptCount: 1,
+    ...(extras.captureId ? { captureId: extras.captureId } : {}),
+    ...(extras.captureIssues ? { captureIssues: extras.captureIssues } : {}),
     // Drive an optional post-archive step (overlay "archive to list" / favourite).
     ...(extras.listId ? { listId: extras.listId } : {}),
     ...(extras.listName ? { listName: extras.listName } : {}),
@@ -85,7 +87,7 @@ export async function createProcessingItem(snapshot, extras = {}) {
   return item;
 }
 
-export async function completeProcessingItem(itemId, status, bookmarkId = null) {
+export async function completeProcessingItem(itemId, status, bookmarkId = null, capture = {}) {
   await updateState((state) => {
     const processingItem = state.processingItems.find((item) => item.id === itemId);
     if (!processingItem) {
@@ -95,7 +97,7 @@ export async function completeProcessingItem(itemId, status, bookmarkId = null) 
     state.processingItems = state.processingItems.filter((item) => item.id !== itemId);
     state.historyItems = addHistoryItem(
       state,
-      { ...processingItem, bookmarkId },
+      { ...processingItem, bookmarkId, captureMode: capture.captureMode, captureIssues: capture.captureIssues },
       status,
       Date.now()
     );
@@ -135,6 +137,7 @@ export async function retryManualReviewItem(itemId) {
     }
 
     nextItem = {
+      ...manualItem,
       id: manualItem.id,
       url: manualItem.url,
       title: manualItem.title,
@@ -427,6 +430,8 @@ function addHistoryItem(state, sourceItem, status, actionAt) {
     favIconUrl: sourceItem.favIconUrl ?? null,
     sourceWindowId: sourceItem.sourceWindowId,
     bookmarkId: sourceItem.bookmarkId ?? null,
+    ...(sourceItem.captureMode ? { captureMode: sourceItem.captureMode } : {}),
+    ...(sourceItem.captureIssues?.length ? { captureIssues: sourceItem.captureIssues } : {}),
     actionAt,
     status,
     expiresAt: getExpiryTimestamp(actionAt, state.settings.historyRetentionHours)

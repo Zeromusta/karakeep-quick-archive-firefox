@@ -35,7 +35,7 @@ it to a GitHub Release, and refreshes the auto-update feed on the
    "browser_specific_settings": {
      "gecko": {
        "id": "karakeep-quick-archive@zeromusta.com",
-       "strict_min_version": "128.0",
+       "strict_min_version": "142.0",
        "update_url": "https://zeromusta.github.io/karakeep-quick-archive-firefox/updates.json"
      }
    }
@@ -63,9 +63,11 @@ git push origin v1.0.1
 
 The [`Release` workflow](.github/workflows/release.yml) then:
 
-1. Runs `npm test`.
+1. Installs pinned dependencies with `npm ci`, builds the SingleFile bundle,
+   runs `npm test`, and validates with `npm run lint`.
 2. Rewrites `manifest.json`'s `version` field to match the tag.
-3. Calls `web-ext sign --channel=unlisted` (AMO signs and returns the
+3. Packages the tagged source (including lockfile and build instructions) for
+   AMO review and calls `web-ext sign --channel=unlisted --upload-source-code release-source.zip` (AMO signs and returns the
    `.xpi`; first submission auto-registers the extension on AMO under
    the self-distributed channel).
 4. Renames the artifact to `karakeep-quick-archive-firefox-<version>.xpi` and
@@ -80,8 +82,13 @@ force a check, open `about:addons` and use the gear menu →
 ### Manual one-off signing (without the workflow)
 
 ```bash
-npm install -g web-ext
-web-ext sign --channel=unlisted \
+npm ci
+npm run build
+npm test
+npm run lint
+git archive --format=zip --output=release-source.zip HEAD
+npx --no-install web-ext sign --channel=unlisted \
+  --upload-source-code release-source.zip \
   --api-key "$AMO_JWT_ISSUER" \
   --api-secret "$AMO_JWT_SECRET"
 ```
@@ -110,3 +117,11 @@ which enforces signing.
 
 Useful if you don't want to deal with AMO at all and run a non-stable
 channel anyway.
+
+## Bundled capture source
+
+The generated `content/page-capture.bundle.js` and SingleFile license copy are
+built with `npm run build`, not checked in. AMO receives `release-source.zip`
+from the tagged commit so reviewers can reproduce them with Node.js 24 and
+`npm ci && npm run build`. The XPI includes an unminified bundle, upstream
+license notices, `THIRD_PARTY.txt`, and the complete SingleFile license.

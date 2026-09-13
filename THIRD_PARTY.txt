@@ -1,0 +1,17 @@
+# Third-party code
+
+Release builds bundle SingleFile Core 1.5.129 by Gildas Lormeau, licensed under
+AGPL-3.0-or-later. The combined extension is distributed under AGPL-3.0-or-later;
+the original extension code remains available under the MIT license in LICENSE.
+The SingleFile license is included in the XPI at licenses/SingleFile-AGPL-3.0.txt.
+
+Corresponding source, including pinned dependency versions and build instructions:
+https://github.com/Zeromusta/karakeep-quick-archive-firefox
+
+SingleFile source:
+https://github.com/gildas-lormeau/single-file-core
+
+To reproduce a release, check out its vX.Y.Z tag, run `npm ci` followed by
+`npm run build`, then `npx web-ext build`. The capture bundle is unminified and
+preserves upstream license notices. Dependency source is available from the
+registry URLs and integrity hashes in package-lock.json.

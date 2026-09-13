@@ -25,6 +25,12 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
 
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build capture script
+        run: npm run build
+
       - name: Run tests
         run: npm test
 
@@ -37,16 +43,20 @@ jobs:
             fs.writeFileSync('manifest.json', JSON.stringify(m, null, 2) + '\n');
           "
 
-      - name: Install web-ext
-        run: npm install -g web-ext
+      - name: Lint extension
+        run: npm run lint
+
+      - name: Package corresponding source for AMO review
+        run: git archive --format=zip --output=release-source.zip HEAD
 
       - name: Sign extension via AMO
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
-          web-ext sign \
+          npx --no-install web-ext sign \
             --channel=unlisted \
+            --upload-source-code release-source.zip \
             --api-key "$AMO_JWT_ISSUER" \
             --api-secret "$AMO_JWT_SECRET"
 
