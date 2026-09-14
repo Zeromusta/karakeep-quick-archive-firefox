@@ -49,6 +49,10 @@
         {
           "version": "1.4.1",
           "update_link": "https://github.com/Zeromusta/karakeep-quick-archive-firefox/releases/download/v1.4.1/karakeep-quick-archive-firefox-1.4.1.xpi"
+        },
+        {
+          "version": "1.4.2",
+          "update_link": "https://github.com/Zeromusta/karakeep-quick-archive-firefox/releases/download/v1.4.2/karakeep-quick-archive-firefox-1.4.2.xpi"
         }
       ]
     }
