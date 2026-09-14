@@ -1,4 +1,5 @@
 export const STORAGE_KEYS = Object.freeze({
+  archiveWarning: "archiveWarning",
   settings: "settings",
   processingItems: "processingItems",
   manualReviewItems: "manualReviewItems",
@@ -82,6 +83,7 @@ export const ARCHIVE_FLASH_DURATION_MS = 2000;
 export const KARAKEEP_BOOKMARK_PREVIEW_PATH = "/dashboard/preview/{id}";
 
 export const MESSAGE_TYPES = Object.freeze({
+  popupOpened: "popupOpened",
   testConnection: "testConnection",
   retryManualReview: "retryManualReview",
   markManualReviewClosed: "markManualReviewClosed",

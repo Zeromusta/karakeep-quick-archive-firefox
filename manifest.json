@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Karakeep Quick Archive",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Quickly capture and close the current tab, then build its page archive, screenshot and banner in the background. Flag incomplete captures.",
   "browser_specific_settings": {
     "gecko": {

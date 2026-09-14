@@ -112,7 +112,12 @@ building. Rebuild and click **Reload** after changing capture code.
 2. Open the Tesco product URL, wait until the product is visible, and dismiss
    any cookie dialog you do not want in the screenshot.
 3. Use the usual archive shortcut (or archive-to-list). Leave the tab selected
-   while the **…** badge appears; it closes once the local copy is persisted.
+   while the toolbar badge spins; it closes once the local copy is persisted.
+   The badge keeps spinning through background processing, then shows a green
+   tick for two seconds. It resumes spinning if another archive is still active;
+   overlapping completions do not queue or extend ticks.
+   A capture or SingleFile upload fallback shows an amber **!** until you open
+   the extension popup, even if other archives succeed in the meantime.
 4. Wait for Processing to finish, then use **Open in Karakeep** in history.
    Check Reader view contains product details, the Precrawled Archive opens,
    Screenshot shows the product, and the bookmark has a banner.

@@ -142,6 +142,7 @@ test("failed archive upload saves the URL and review tag", async () => {
   };
   const result = await archiveWithCapture({ ...tab, captureId });
   assert.equal(result.captureMode, "url");
+  assert.equal(browser.__mock.localState.archiveWarning, true);
   assert.match(result.captureIssues.join(), /413/);
   assert.deepEqual(JSON.parse(calls.at(-1).options.body), { tags: [{ tagName: "capture-incomplete" }] });
   await deleteCapture(captureId);
@@ -194,6 +195,7 @@ test("closed-history saves get the review tag without accessing the old page", a
   };
   const result = await archiveWithCapture(tab);
   assert.equal(result.captureMode, "url");
+  assert.equal(browser.__mock.localState.archiveWarning, undefined);
   assert.ok(tagged);
 });
 

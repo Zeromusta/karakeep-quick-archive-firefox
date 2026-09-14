@@ -1,3 +1,4 @@
+import { beginArchiveProcessing, showArchiveWarning } from "../shared/icon-theme.js";
 import { logDebug } from "../shared/utils.js";
 import { putCapture, deleteCapture } from "./capture-store.js";
 import { archiveWithCapture } from "./capture-upload.js";
@@ -27,6 +28,7 @@ export async function enqueueArchiveFromSnapshot(snapshot, extras = {}, capture 
     captureId = crypto.randomUUID();
     try { await putCapture(captureId, capture); }
     catch {
+      await showArchiveWarning();
       captureId = null;
       extras = { ...extras, captureIssues: ["Could not store local capture; saved URL only"] };
     }
@@ -70,10 +72,13 @@ export function startProcessingJob(item) {
     return activeJobs.get(item.id);
   }
 
+  const finishProcessing = beginArchiveProcessing();
+  let succeeded = false;
   const job = (async () => {
     try {
       const result = await archiveWithCapture(item);
       await completeProcessingItem(item.id, result.status, result.bookmarkId, result);
+      succeeded = true;
       // The archive itself is done; the optional list/favourite step runs after
       // and never fails the archive — it spawns its own manual-review entry.
       await applyPostArchiveAction(item, result.bookmarkId);
@@ -92,6 +97,7 @@ export function startProcessingJob(item) {
 
   const trackedJob = job.finally(() => {
     activeJobs.delete(item.id);
+    finishProcessing(succeeded);
   });
 
   activeJobs.set(item.id, trackedJob);

@@ -7,7 +7,10 @@ import {
 } from "../shared/constants.js";
 import {
   applyIconTheme,
-  flashArchivedIcon,
+  beginArchiveProcessing,
+  clearArchiveWarning,
+  restoreArchiveWarning,
+  refreshIcon,
   watchSystemThemeChanges
 } from "../shared/icon-theme.js";
 import { isEligibleUrl, logDebug, normalizeSettingsInput } from "../shared/utils.js";
@@ -74,7 +77,11 @@ function registerListeners() {
     const nextSettings = normalizeSettingsInput(
       changes[STORAGE_KEYS.settings].newValue ?? {}
     );
-    void applyIconTheme(nextSettings.iconTheme, nextSettings.monitoringPaused);
+    void applyIconTheme(nextSettings.iconTheme, nextSettings.monitoringPaused, nextSettings.archiveFeedbackIcon);
+  });
+
+  browser.tabs.onActivated.addListener(() => {
+    void refreshIcon();
   });
 
   browser.tabs.onCreated.addListener(async (tab) => {
@@ -114,6 +121,9 @@ function registerListeners() {
     await initializeExtension();
 
     switch (message?.type) {
+      case MESSAGE_TYPES.popupOpened:
+        await clearArchiveWarning();
+        return { ok: true };
       case MESSAGE_TYPES.testConnection:
         return await testConnection(message.settings);
       case MESSAGE_TYPES.getLists:
@@ -163,7 +173,8 @@ async function initializeExtension() {
       await initializeCleanup();
       await pruneHistory();
       const settings = await getSettings();
-      await applyIconTheme(settings.iconTheme, settings.monitoringPaused);
+      await restoreArchiveWarning();
+      await applyIconTheme(settings.iconTheme, settings.monitoringPaused, settings.archiveFeedbackIcon);
       watchSystemThemeChanges();
       isInitialized = true;
     })().finally(() => {
@@ -256,9 +267,8 @@ async function handleArchiveCurrentTabToList(message, sender) {
 async function captureArchiveAndClose(tab, snapshot, extras = {}) {
   if (capturingTabs.has(tab.id)) return;
   capturingTabs.add(tab.id);
+  const finishCapture = beginArchiveProcessing();
   try {
-    await browser.action?.setBadgeText({ tabId: tab.id, text: "…" }).catch(() => {});
-    await browser.action?.setTitle({ tabId: tab.id, title: "Capturing page…" }).catch(() => {});
     const capture = await capturePage(tab);
     const item = await enqueueArchiveFromSnapshot(snapshot, extras, capture, { deferProcessing: true });
     // Do not close a different page if the user navigated while capturing.
@@ -273,16 +283,12 @@ async function captureArchiveAndClose(tab, snapshot, extras = {}) {
     await startProcessingJob(item);
   } finally {
     capturingTabs.delete(tab.id);
-    await browser.action?.setBadgeText({ tabId: tab.id, text: "" }).catch(() => {});
-    await browser.action?.setTitle({ tabId: tab.id, title: "Karakeep Quick Archive" }).catch(() => {});
+    finishCapture();
   }
 }
 
 async function showArchiveCaptureFeedback(snapshot) {
   const settings = await getSettings();
-  if (settings.archiveFeedbackIcon) {
-    void flashArchivedIcon();
-  }
   if (settings.archiveFeedbackNotification) {
     void notifyArchived(snapshot.title || snapshot.url || "Tab");
   }

@@ -150,6 +150,7 @@ try {
   assert.match(fallback.captureIssues.join(), /413/);
   assert.ok(calls.some((call) => call.json?.tags?.[0]?.tagName === "capture-incomplete"));
   console.log("PASS: rejected snapshot falls back to URL, keeps images, tags for review and closes the tab");
+  console.log("PASS: processing toolbar title, persistent fallback warning, and popup acknowledgement in real Firefox");
   console.log(`Screenshot for visual inspection: ${join(temporary, "screenshot.jpg")}`);
 } finally {
   if (driver) await driver.quit();
@@ -200,7 +201,17 @@ async function browserHarness(base) {
     const saving = savePage("product");
     // Capture another page while the first archive is still downloading.
     await Promise.race([firstTabClosed, saving]);
+    await pause(200);
+    if (!(await browser.action.getTitle({})).includes("Archiving")) throw new Error("Toolbar must spin after tab closure while resources are pending");
     const [saved, fallback] = await Promise.all([saving, savePage("rejected")]);
+    await pause(2500);
+    if (!(await browser.action.getTitle({})).includes("fell back")) throw new Error("Fallback warning did not survive other completions");
+    if (!(await browser.storage.local.get("archiveWarning")).archiveWarning) throw new Error("Warning was not persisted");
+    const popup = await browser.tabs.create({ url: browser.runtime.getURL("popup/popup.html") });
+    await pause(1000);
+    if ((await browser.storage.local.get("archiveWarning")).archiveWarning) throw new Error("Opening popup did not acknowledge warning");
+    if ((await browser.action.getTitle({})).includes("fell back")) throw new Error("Acknowledged warning is still visible");
+    await browser.tabs.remove(popup.id);
     await fetch(`${base}/test-result`, { method: "POST", body: JSON.stringify({ saved, fallback }) });
   } catch (error) {
     await fetch(`${base}/test-result`, { method: "POST", body: JSON.stringify({ error: String(error) + "\n" + error.stack }) });

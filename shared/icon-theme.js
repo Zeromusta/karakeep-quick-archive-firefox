@@ -1,92 +1,131 @@
 import {
   ARCHIVE_FLASH_DURATION_MS,
   ICON_PATHS,
-  ICON_THEMES
+  ICON_THEMES,
+  STORAGE_KEYS
 } from "./constants.js";
 
 let currentMode = ICON_THEMES.system;
 let currentPaused = false;
 let themeListenerAttached = false;
+let feedbackEnabled = true;
+let processingCount = 0;
+let warningActive = false;
 let flashTimer = null;
-let flashReassertTimer = null;
-let flashActive = false;
+let animationTimer = null;
+let frame = 0;
+let paintVersion = 0;
+const imageCache = new Map();
 
-export async function applyIconTheme(iconTheme, monitoringPaused = false) {
-  if (typeof browser === "undefined" || !browser.action?.setIcon) {
-    return;
-  }
+export async function applyIconTheme(iconTheme, monitoringPaused = false, archiveFeedbackIcon = feedbackEnabled) {
   currentMode = iconTheme;
   currentPaused = Boolean(monitoringPaused);
-
-  // Don't clobber an in-flight archived-tick flash; its revert timer will
-  // repaint with these latest values when it finishes.
-  if (flashActive) {
-    return;
-  }
-
-  const pathMap = await resolvePathMap(iconTheme);
-
-  if (currentPaused) {
-    const imageData = await buildBadgedImageData(pathMap, drawPauseBadge);
-    if (imageData) {
-      await setActionImageData(imageData);
-      await setActionTitle("Karakeep Quick Archive — Monitoring paused");
-      return;
-    }
-    // OffscreenCanvas not available — fall back to the plain icon.
-  }
-
-  await setActionIcon(pathMap);
-  await setActionTitle("Karakeep Quick Archive");
+  feedbackEnabled = Boolean(archiveFeedbackIcon);
+  await refreshIcon();
 }
 
-// Briefly composite a green tick onto the toolbar icon to confirm an archive
-// was captured, then revert to the current base/paused icon after a delay.
-export async function flashArchivedIcon() {
-  if (typeof browser === "undefined" || !browser.action?.setIcon) {
-    return;
+// Count live work, not completion notifications. Finishes during an existing
+// tick are coalesced; its deadline never moves and nothing is queued.
+export function beginArchiveProcessing() {
+  processingCount += 1;
+  void refreshIcon();
+  let finished = false;
+  return (succeeded = false) => {
+    if (finished) return;
+    finished = true;
+    processingCount -= 1;
+    if (succeeded) flashArchivedIcon();
+    else void refreshIcon();
+  };
+}
+
+export function flashArchivedIcon() {
+  if (!warningActive && feedbackEnabled && flashTimer === null) {
+    flashTimer = setTimeout(() => {
+      flashTimer = null;
+      void refreshIcon();
+    }, ARCHIVE_FLASH_DURATION_MS);
+  }
+  void refreshIcon();
+}
+
+export async function restoreArchiveWarning() {
+  const stored = await browser.storage.local.get(STORAGE_KEYS.archiveWarning);
+  warningActive = Boolean(stored[STORAGE_KEYS.archiveWarning]);
+  await refreshIcon();
+}
+
+export async function showArchiveWarning() {
+  warningActive = true;
+  clearTimeout(flashTimer);
+  flashTimer = null;
+  void refreshIcon();
+  try {
+    await browser.storage.local.set({ [STORAGE_KEYS.archiveWarning]: true });
+  } catch { /* Badge feedback must never fail an archive. */ }
+}
+
+export async function clearArchiveWarning() {
+  warningActive = false;
+  void refreshIcon();
+  await browser.storage.local.remove(STORAGE_KEYS.archiveWarning);
+}
+
+export async function refreshIcon() {
+  const version = ++paintVersion;
+  if (typeof browser === "undefined" || !browser.action?.setIcon) return;
+  const state = warningActive ? "warning"
+    : feedbackEnabled && flashTimer !== null ? "archived"
+    : feedbackEnabled && processingCount > 0 ? "processing"
+    : currentPaused ? "paused" : "idle";
+  const animated = state === "processing" || state === "archived";
+  if (animated && animationTimer === null) {
+    animationTimer = setInterval(() => {
+      frame = (frame + 1) % 12;
+      void refreshIcon();
+    }, 100);
+  } else if (!animated && animationTimer !== null) {
+    clearInterval(animationTimer);
+    animationTimer = null;
   }
   const pathMap = await resolvePathMap(currentMode);
-  const imageData = await buildBadgedImageData(pathMap, drawCheckBadge);
-  if (!imageData) {
-    // OffscreenCanvas unavailable — skip the cosmetic flash.
-    return;
+  const currentFrame = frame;
+  const drawBadge = {
+    warning: drawWarningBadge,
+    archived: drawCheckBadge,
+    processing: (ctx, size) => drawSpinnerBadge(ctx, size, currentFrame),
+    paused: drawPauseBadge
+  }[state];
+  let imageData = null;
+  if (drawBadge) {
+    const key = JSON.stringify([pathMap, state, state === "processing" ? currentFrame : 0]);
+    if (!imageCache.has(key)) imageCache.set(key, buildBadgedImageData(pathMap, drawBadge));
+    imageData = await imageCache.get(key);
+    if (!imageData) imageCache.delete(key);
   }
-  clearFlashTimers();
-  flashActive = true;
-  await setActionImageData(imageData);
-  await setActionTitle("Karakeep Quick Archive — Archived");
-  // The archive shortcut paints this tick and then closes the active tab. The
-  // resulting tab switch can make Firefox repaint the toolbar action from its
-  // manifest icon (mozilla/addons#736), landing right on top of the tick. The
-  // flashActive guard only stops our own applyIconTheme from clobbering it, so
-  // re-assert the tick a few times across the first moments to outlast that
-  // external repaint. Repainting identical pixels is a no-op once it sticks.
-  let reasserts = 0;
-  flashReassertTimer = setInterval(() => {
-    reasserts += 1;
-    void setActionImageData(imageData);
-    if (reasserts >= 4) {
-      clearInterval(flashReassertTimer);
-      flashReassertTimer = null;
+  // Theme changes and new archive events can overtake asynchronous image work.
+  if (version !== paintVersion) return;
+  if (imageData) await setActionImageData(imageData);
+  else await setActionIcon(pathMap);
+  if (version !== paintVersion) return;
+  try {
+    // Native text is a fallback when canvas compositing is unavailable.
+    if (browser.action.setBadgeText) {
+      if (state === "warning" && !imageData) {
+        await browser.action.setBadgeBackgroundColor?.({ color: "#f59e0b" });
+      }
+      await browser.action.setBadgeText({ text: !imageData && state === "warning" ? "!" : "" });
     }
-  }, 150);
-  flashTimer = setTimeout(() => {
-    flashTimer = null;
-    flashActive = false;
-    void applyIconTheme(currentMode, currentPaused);
-  }, ARCHIVE_FLASH_DURATION_MS);
-}
-
-function clearFlashTimers() {
-  if (flashTimer !== null) {
-    clearTimeout(flashTimer);
-    flashTimer = null;
-  }
-  if (flashReassertTimer !== null) {
-    clearInterval(flashReassertTimer);
-    flashReassertTimer = null;
-  }
+  } catch { /* Cosmetic. */ }
+  if (version !== paintVersion) return;
+  const suffix = {
+    warning: " — Page archive fell back; click to review",
+    archived: " — Archived",
+    processing: " — Archiving…",
+    paused: " — Monitoring paused",
+    idle: ""
+  }[state];
+  await setActionTitle(`Karakeep Quick Archive${suffix}`);
 }
 
 async function resolvePathMap(iconTheme) {
@@ -183,6 +222,7 @@ async function composeBadgedImageData(iconPath, size, drawBadge) {
       return null;
     }
     ctx.drawImage(bitmap, 0, 0, size, size);
+    bitmap.close();
     drawBadge(ctx, size);
     return ctx.getImageData(0, 0, size, size);
   } catch {
@@ -219,6 +259,38 @@ function drawPauseBadge(ctx, size) {
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(cx - barGap - barWidth, barsTop, barWidth, barHeight);
   ctx.fillRect(cx + barGap, barsTop, barWidth, barHeight);
+}
+
+function drawSpinnerBadge(ctx, size, frame) {
+  const cx = size * 0.706;
+  const cy = cx;
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(cx, cy, size * 0.42, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#2563eb";
+  ctx.lineWidth = Math.max(1.5, size * 0.12);
+  ctx.lineCap = "round";
+  const angle = frame * Math.PI / 6;
+  ctx.beginPath();
+  ctx.arc(cx, cy, size * 0.26, angle, angle + Math.PI * 1.4);
+  ctx.stroke();
+}
+
+function drawWarningBadge(ctx, size) {
+  const cx = size * 0.706;
+  const cy = cx;
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(cx, cy, size * 0.42, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#f59e0b";
+  ctx.beginPath();
+  ctx.arc(cx, cy, size * 0.34, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#111827";
+  ctx.fillRect(cx - size * 0.055, cy - size * 0.23, size * 0.11, size * 0.28);
+  ctx.fillRect(cx - size * 0.055, cy + size * 0.13, size * 0.11, size * 0.11);
 }
 
 function drawCheckBadge(ctx, size) {

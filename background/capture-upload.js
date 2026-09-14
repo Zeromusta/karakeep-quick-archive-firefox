@@ -1,3 +1,4 @@
+import { showArchiveWarning } from "../shared/icon-theme.js";
 import { assembleCapture } from "./capture-assembly.js";
 import { CAPTURE_TAG } from "../shared/capture.js";
 import { getCapture, putCapture } from "./capture-store.js";
@@ -19,12 +20,19 @@ export async function archiveWithCapture(item) {
     await checkpoint();
   }
 
+  // A closed-history URL save is intentional; a missing or degraded local
+  // capture is a fallback and needs acknowledgement even if later steps fail.
+  if (item.captureId && (capture.mode === "text" || capture.mode === "url")) {
+    await showArchiveWarning();
+  }
+
   if (!capture.result) {
     if (capture.html) {
       try { capture.result = await uploadPageArchive(item.url, capture.html); }
       catch (error) {
         capture.issues.push(`Snapshot upload failed: ${error.message}`);
         capture.mode = "url";
+        await showArchiveWarning();
       }
     }
     if (!capture.result) capture.result = await archiveBookmark(item);
